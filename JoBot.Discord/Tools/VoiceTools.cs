@@ -29,7 +29,7 @@ public class VoiceTools : IToolProvider
         await _voiceService.LeaveVoiceChannelAsync(guildId);
         return ToolResult.Success("Left voice channel.");
     }
-    
+
     [AiTool("Play audio from a stream URL in the currently connected voice channel")]
     public async Task<string> PlayAsync(
         [AiParameter("Guild ID")] ulong guildId,
@@ -48,7 +48,7 @@ public class VoiceTools : IToolProvider
         await _voiceService.StopAsync(guildId);
         return ToolResult.Success("Playback stopped.");
     }
-    
+
     [AiTool("Check if the bot is connected to a voice channel")]
     public async Task<string> IsConnectedAsync(
         [AiParameter("Guild ID")] ulong guildId)
@@ -64,7 +64,7 @@ public class VoiceTools : IToolProvider
         var playing = await _voiceService.IsPlayingAsync(guildId);
         return ToolResult.Success(new { playing });
     }
-    
+
     [AiTool("Get the current queue")]
     public async Task<string> GetQueueAsync(
         [AiParameter("Guild ID")] ulong guildId)
@@ -75,7 +75,7 @@ public class VoiceTools : IToolProvider
             ? ToolResult.Failure("Not connected to voice.")
             : ToolResult.Success(queue);
     }
-    
+
     [AiTool("Add a song to the queue")]
     public async Task<string> EnqueueAsync(
         [AiParameter("Guild ID")] ulong guildId,

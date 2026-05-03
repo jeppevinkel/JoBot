@@ -11,7 +11,7 @@ public static class ToolResult
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-    
+
     /// <summary>
     /// Returns a JSON-formatted tool result with <c>status: "success"</c>.
     /// </summary>

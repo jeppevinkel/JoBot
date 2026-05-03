@@ -93,7 +93,7 @@ public class LavalinkVoiceService : IVoiceService
             return false;
         }
     }
-    
+
     public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl)
     {
         try

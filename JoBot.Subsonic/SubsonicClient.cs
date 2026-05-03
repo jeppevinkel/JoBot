@@ -16,7 +16,7 @@ public class SubsonicClient : ISubsonicClient
     private readonly string _password;
     private const string ApiVersion = "1.16.1";
     private const string ClientName = "JoBot";
-    
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -70,7 +70,7 @@ public class SubsonicClient : ISubsonicClient
     {
         var url = BuildUrl(endpoint, extra);
         var json = await _http.GetStringAsync(url, cancellationToken);
-        
+
         var envelope = JsonSerializer.Deserialize<SubsonicEnvelope>(json, JsonOptions)
                        ?? throw new InvalidOperationException("Empty response from server");
 
@@ -89,7 +89,7 @@ public class SubsonicClient : ISubsonicClient
     // Get a direct stream URL (can be passed to a media player)
     public string GetStreamUrl(string songId, int? maxBitRate = null)
     {
-        var extra = new Dictionary<string, string> {["id"] = songId};
+        var extra = new Dictionary<string, string> { ["id"] = songId };
         if (maxBitRate.HasValue) extra["maxBitRate"] = maxBitRate.ToString()!;
         return BuildUrl("stream", extra);
     }
@@ -149,7 +149,7 @@ public class SubsonicClient : ISubsonicClient
     public async Task<List<SongResult>> GetRandomSongsAsync(int count = 10)
     {
         var songs = await GetRandomSongsAsync(count, CancellationToken.None);
-        
+
         return songs.Select(s => new SongResult(
             s.Id,
             s.Title,

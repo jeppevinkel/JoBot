@@ -19,7 +19,7 @@ namespace JoBot.Ai.Services;
 
 public class AiService : IAiService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() {WriteIndented = true};
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly ILogger<AiService> _logger;
     private readonly AnthropicClient _anthropicClient;
     private readonly AiOptions _options;
@@ -80,7 +80,7 @@ public class AiService : IAiService
 
             MessageResponse? response = await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
             Message? assistantMessage = response.Message;
-            
+
             if (assistantMessage is null)
             {
                 yield return new IgnoreAction();
@@ -93,15 +93,15 @@ public class AiService : IAiService
             while (response.ToolCalls.Count > 0 && toolIterations < _options.MaxToolIterations)
             {
                 toolIterations++;
-                
+
                 // Yield any text Claude produced alongside the tool calls
                 var textContent = response.Message?.Content
                     .OfType<TextContent>()
                     .FirstOrDefault()?.Text;
-                
+
                 if (!string.IsNullOrWhiteSpace(textContent))
                     yield return new RespondAction { Content = textContent };
-                
+
                 foreach (Function? toolCall in response.ToolCalls)
                 {
                     try
@@ -121,7 +121,7 @@ public class AiService : IAiService
 
                 parameters.Messages = history.Messages.ToList();
                 response = await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
-                
+
                 if (response.Message is not null)
                     history.Add(response.Message);
             }
@@ -132,7 +132,7 @@ public class AiService : IAiService
 
             if (response.Message is not null)
             {
-                yield return new RespondAction {Content = response.Message};
+                yield return new RespondAction { Content = response.Message };
             }
             else
             {

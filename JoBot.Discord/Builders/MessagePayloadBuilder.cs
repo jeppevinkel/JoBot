@@ -38,7 +38,7 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
             {
                 Type = guild is not null ? "guild" : "dm",
                 Guild = guild is not null
-                    ? new GuildInfo {Id = guild.Id.ToString(), Name = guild.Name}
+                    ? new GuildInfo { Id = guild.Id.ToString(), Name = guild.Name }
                     : null,
                 Channel = new ChannelInfo
                 {

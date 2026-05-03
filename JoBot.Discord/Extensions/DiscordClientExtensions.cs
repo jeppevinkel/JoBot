@@ -29,7 +29,7 @@ public static class DiscordClientExtensions
             return null;
         }
     }
-    
+
     public static async Task<(DiscordGuild? guild, string? failureReason)> TryGetGuildWithReasonAsync(this DiscordClient client, ulong guildId, ILogger? logger = null)
     {
         try

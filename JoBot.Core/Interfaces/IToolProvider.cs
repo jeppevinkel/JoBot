@@ -1,6 +1,3 @@
 ﻿namespace JoBot.Core.Interfaces;
 
-public class IToolProvider
-{
-    
-}
+public interface IToolProvider;

@@ -7,12 +7,12 @@ namespace JoBot.Subsonic.Tools;
 public class MusicTools : IToolProvider
 {
     private readonly ISubsonicClient _subsonicClient;
-    
+
     public MusicTools(ISubsonicClient subsonicClient)
     {
         _subsonicClient = subsonicClient;
     }
-    
+
     [AiTool("Search for songs by title, artist or album")]
     public async Task<string> SearchSongsAsync(
         [AiParameter("The search query")] string query,

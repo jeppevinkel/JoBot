@@ -13,7 +13,7 @@ public static class SubsonicExtensions
         var baseUrl = config["Subsonic:BaseUrl"];
         var username = config["Subsonic:Username"];
         var password = config["Subsonic:Password"];
-        
+
         ConfigurationValidator.Validate(
             ("Subsonic:BaseUrl", baseUrl),
             ("Subsonic:Username", username),

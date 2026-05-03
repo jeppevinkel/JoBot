@@ -21,15 +21,15 @@ public static class DiscordServiceExtensions
 
         services.AddHostedService<DiscordBotService>();
         services.AddDiscordClient(token, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
-        
+
         services.AddLavalink();
         services.ConfigureLavalink(c =>
         {
-            c.BaseAddress  = new Uri(config["Lavalink:BaseAddress"] ?? "http://localhost:2333");
+            c.BaseAddress = new Uri(config["Lavalink:BaseAddress"] ?? "http://localhost:2333");
             c.Passphrase = config["Lavalink:Passphrase"]
                            ?? throw new InvalidOperationException("Lavalink:Passphrase is not configured.");
         });
-        
+
         // services.AddVoiceExtension();
         services.ConfigureEventHandlers(b =>
         {
@@ -40,7 +40,7 @@ public static class DiscordServiceExtensions
         services.AddSingleton<IMessagePayloadBuilder, MessagePayloadBuilder>();
         // services.AddSingleton<IVoiceService, DiscordVoiceService>();
         services.AddSingleton<IVoiceService, LavalinkVoiceService>();
-        
+
         // Tools
         services.AddSingleton<IToolProvider, VoiceTools>();
 

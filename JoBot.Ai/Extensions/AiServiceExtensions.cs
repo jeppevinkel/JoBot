@@ -13,11 +13,11 @@ public static class AiServiceExtensions
     public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
     {
         var token = config["Anthropic:Token"];
-        
+
         ConfigurationValidator.Validate(
             ("Anthropic:Token", token)
         );
-        
+
         services.AddOptions<AiOptions>()
             .Bind(config.GetSection(AiOptions.SectionName));
 

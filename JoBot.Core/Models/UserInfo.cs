@@ -9,7 +9,7 @@ public record UserInfo
 
     [JsonPropertyName("display_name")]
     public required string DisplayName { get; init; }
-    
+
     [JsonPropertyName("voice_channel")]
     public ChannelInfo? VoiceChannel { get; init; }
 }

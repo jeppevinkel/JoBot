@@ -16,7 +16,7 @@ public class ToolFactory
     {
         NumberHandling = JsonNumberHandling.AllowReadingFromString
     };
-    
+
     public IReadOnlyList<Tool> Tools => _tools;
 
     public ToolFactory(IEnumerable<IToolProvider> providers)
@@ -24,7 +24,7 @@ public class ToolFactory
         foreach (var provider in providers)
             RegisterProvider(provider);
     }
-    
+
     private void RegisterProvider(IToolProvider provider)
     {
         var methods = provider.GetType()
@@ -40,7 +40,7 @@ public class ToolFactory
             _handlers[toolName] = args => InvokeMethod(provider, method, args);
         }
     }
-    
+
     public async Task<string> InvokeAsync(string toolName, JsonNode? arguments)
     {
         if (!_handlers.TryGetValue(toolName, out var handler))
@@ -48,7 +48,7 @@ public class ToolFactory
 
         return await handler(arguments);
     }
-    
+
     private static Tool BuildTool(string name, string description, MethodInfo method)
     {
         var properties = new Dictionary<string, object>();
@@ -78,7 +78,7 @@ public class ToolFactory
 
         return new Tool(new Function(name, description, schema));
     }
-    
+
     private static async Task<string> InvokeMethod(
         IToolProvider provider,
         MethodInfo method,
@@ -104,7 +104,7 @@ public class ToolFactory
             _ => result?.ToString() ?? "Done"
         };
     }
-    
+
     private static object? DeserializeParameter(
         ParameterInfo param,
         Dictionary<string, JsonNode?> args)
@@ -114,7 +114,7 @@ public class ToolFactory
 
         return node.Deserialize(param.ParameterType, ParameterDeserializeOptions);
     }
-    
+
     private static string GetJsonType(Type type) => type switch
     {
         _ when type == typeof(string) => "string",
@@ -123,7 +123,7 @@ public class ToolFactory
         _ when type == typeof(bool) => "boolean",
         _ => "string"
     };
-    
+
     private static string ToSnakeCase(string name) =>
         string.Concat(name.Select((c, i) =>
                 i > 0 && char.IsUpper(c) ? $"_{c}" : $"{c}"))
