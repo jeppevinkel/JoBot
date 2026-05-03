@@ -1,6 +1,4 @@
 ﻿FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
-LABEL com.github.owner="jeppevinkel"
-LABEL com.github.repo="JoBot"
 USER $APP_UID
 WORKDIR /app
 
