@@ -26,6 +26,18 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
     {
         if (eventArgs.Author.IsBot) return;
 
+        bool isBotMentioned = eventArgs.MentionedUsers.Any(u => u.IsCurrent);
+        bool isReplyToBot = eventArgs.Message.ReferencedMessage?.Author?.IsCurrent ?? false;
+        bool isDirectMessage = eventArgs.Channel.IsPrivate;
+        
+        if (!isBotMentioned && !isReplyToBot && !isDirectMessage) return;
+
+        if (isDirectMessage)
+        {
+            await eventArgs.Message.RespondAsync("Why are you sending me direct messages? (P.s. I can't respond to direct messages.)");
+            return;
+        }
+
         MessagePayload payload = await _payloadBuilder.BuildAsync(eventArgs);
 
         await foreach (AiAction action in _aiService.ProcessAsync(eventArgs.Guild.Id, payload))
