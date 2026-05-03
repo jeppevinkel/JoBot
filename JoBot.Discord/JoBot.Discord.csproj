@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="DSharpPlus" Version="5.0.0-pr.2404-01328" />
+      <PackageReference Include="DSharpPlus.Voice" Version="5.0.0-pr.2404-01328" />
+      <PackageReference Include="Lavalink4NET.DSharpPlus.Nightly" Version="4.2.1" />
+      <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\JoBot.Core\JoBot.Core.csproj" />
+    </ItemGroup>
+
+</Project>

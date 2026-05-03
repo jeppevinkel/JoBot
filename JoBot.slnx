@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="JoBot.Ai/JoBot.Ai.csproj" />
+  <Project Path="JoBot.App/JoBot.App.csproj" />
+  <Project Path="JoBot.Core/JoBot.Core.csproj" />
+  <Project Path="JoBot.Discord/JoBot.Discord.csproj" />
+  <Project Path="JoBot.Subsonic/JoBot.Subsonic.csproj" />
+</Solution>
