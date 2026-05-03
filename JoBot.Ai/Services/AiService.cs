@@ -13,7 +13,6 @@ using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tool = Anthropic.SDK.Common.Tool;
 
 namespace JoBot.Ai.Services;
 
@@ -26,7 +25,6 @@ public class AiService : IAiService
 
     private readonly ConcurrentDictionary<ulong, GuildConversationHistory> _guildData = new();
     private readonly ToolFactory _toolFactory;
-    private readonly List<Tool> _tools;
 
     private static readonly List<SystemMessage> SystemPrompt =
     [
@@ -49,7 +47,6 @@ public class AiService : IAiService
         _options = options.Value;
 
         _toolFactory = new ToolFactory(toolProviders);
-        // _tools = toolProviders.SelectMany(p => p.GetTools()).ToList();
     }
 
     public async IAsyncEnumerable<AiAction> ProcessAsync(
@@ -78,7 +75,8 @@ public class AiService : IAiService
                 System = SystemPrompt
             };
 
-            MessageResponse? response = await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
+            MessageResponse? response =
+                await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
             Message? assistantMessage = response.Message;
 
             if (assistantMessage is null)
