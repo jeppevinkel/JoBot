@@ -49,7 +49,8 @@ jobs:
             
       - uses: docker/build-push-action@v7
         with:
-          context: JoBot.App
+          context: .
+          file: JoBot.App/Dockerfile
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
