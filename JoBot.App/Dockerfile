@@ -1,4 +1,6 @@
 ﻿FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
+LABEL com.github.owner="jeppevinkel"
+LABEL com.github.repo="JoBot"
 USER $APP_UID
 WORKDIR /app
 
@@ -13,7 +15,7 @@ COPY ["JoBot.Subsonic/JoBot.Subsonic.csproj", "JoBot.Subsonic/"]
 RUN dotnet restore "JoBot.App/JoBot.App.csproj"
 COPY . .
 WORKDIR "/src/JoBot.App"
-RUN dotnet build "./JoBot.App.csproj" -c $BUILD_CONFIGURATION -o /app/build --no-restore
+RUN dotnet build "./JoBot.App.csproj" -c $BUILD_CONFIGURATION --no-restore
 
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
