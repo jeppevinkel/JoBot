@@ -29,7 +29,7 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
         bool isBotMentioned = eventArgs.MentionedUsers.Any(u => u.IsCurrent);
         bool isReplyToBot = eventArgs.Message.ReferencedMessage?.Author?.IsCurrent ?? false;
         bool isDirectMessage = eventArgs.Channel.IsPrivate;
-        
+
         if (!isBotMentioned && !isReplyToBot && !isDirectMessage) return;
 
         if (isDirectMessage)
