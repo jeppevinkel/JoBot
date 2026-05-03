@@ -137,12 +137,14 @@ public class LavalinkVoiceService : IVoiceService
 
         return new QueueInfo
         {
-            CurrentTrack = current is null ? null : new TrackInfo
-            {
-                Title = current.Title,
-                Artist = current.Author,
-                Duration = current.Duration
-            },
+            CurrentTrack = current is null
+                ? null
+                : new TrackInfo
+                {
+                    Title = current.Title,
+                    Artist = current.Author,
+                    Duration = current.Duration
+                },
             QueuedTracks = queue.Select(item => new TrackInfo
             {
                 Title = item.Track?.Title ?? "Unknown",
