@@ -54,6 +54,8 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          annotations: ${{ steps.metadata.outputs.annotations }}
+          annotations: |
+            ${{ steps.metadata.outputs.annotations }}
+            index:org.opencontainers.image.description=${{ github.event.repository.description }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
