@@ -21,12 +21,18 @@ public static class DiscordServiceExtensions
 {
     public static IServiceCollection AddDiscordServices(this IServiceCollection services, IConfiguration config)
     {
-        var token = config["Discord:Token"]
-                    ?? throw new InvalidOperationException("Discord:Token is not configured.");
+        var token = config["Discord:Token"];
+
+        var debugGuildId = ulong.Parse(config["Discord:DebugGuildId"] ?? "0");
+
+        JoBot.Core.Helpers.ConfigurationValidator.Validate(
+            ("Discord:Token", token),
+            ("Discord:DebugGuildId", debugGuildId.ToString())
+        );
 
         services.AddHostedService<DiscordBotService>();
-        services.AddDiscordClient(token, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
-        
+        services.AddDiscordClient(token!, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
+
         SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
         {
             NamingPolicy = new KebabCaseNamingPolicy(),
@@ -34,14 +40,12 @@ public static class DiscordServiceExtensions
 
         services.AddCommandsExtension((provider, extension) =>
         {
-            
-
             extension.AddProcessor(slashCommandProcessor);
 
             extension.AddCommands<SettingsCommands>();
         }, new CommandsConfiguration
         {
-            DebugGuildId = 330295897638436864,
+            DebugGuildId = debugGuildId,
             RegisterDefaultCommandProcessors = false
         });
 
