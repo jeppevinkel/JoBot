@@ -26,26 +26,23 @@ public static class DiscordServiceExtensions
 
         services.AddHostedService<DiscordBotService>();
         services.AddDiscordClient(token, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
+        
+        SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
+        {
+            NamingPolicy = new KebabCaseNamingPolicy(),
+        });
 
         services.AddCommandsExtension((provider, extension) =>
         {
-            SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
-            {
-                NamingPolicy = new KebabCaseNamingPolicy(),
-            });
+            
 
             extension.AddProcessor(slashCommandProcessor);
-            // Force TextCommandProcessor to be configured but never match
-            var neverMatchResolver = new NeverMatchPrefixResolver();
-            extension.AddProcessor(new TextCommandProcessor(new TextCommandConfiguration
-            {
-                PrefixResolver = neverMatchResolver.ResolvePrefixAsync
-            }));
 
             extension.AddCommands<SettingsCommands>();
         }, new CommandsConfiguration
         {
-            DebugGuildId = 330295897638436864
+            DebugGuildId = 330295897638436864,
+            RegisterDefaultCommandProcessors = false
         });
 
         services.AddLavalink();
