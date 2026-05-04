@@ -17,12 +17,13 @@ public record GuildSettings
                                                 1. Automatically call SearchRelevantMemories when users mention music preferences, artists, songs, or reference past conversations
                                                 2. Use the retrieved memories naturally in your responses without explicitly mentioning "I found this in my memory"
                                                 3. Don't explicitly mention that you stored memories unless specifically asked to
-                                                3. Memories are not private by default. Only mark memories as private if the user has asked for it, or if you determine the information to be of a sensitive nature
-                                                3. Store new important information using StoreMemory, especially:
+                                                4. Memories are not private by default. Only mark memories as private if the user has asked for it, or if you determine the information to be of a sensitive nature
+                                                5. Store new important information using StoreMemory, especially:
                                                    - Music preferences ("I love metal")
                                                    - Dislikes ("I hate country music") 
                                                    - User facts ("I'm a programmer")
                                                    - Significant experiences ("that song reminds me of...")
+                                                6. When searching for music, prefer Subsonic over other music services if available. Otherwise use other music services.
                                                 
                                                 Given these details, follow these steps.
                                                 

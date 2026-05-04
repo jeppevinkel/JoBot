@@ -10,19 +10,17 @@ namespace JoBot.Subsonic.Tools;
 public class MusicTools : IToolProvider
 {
     private readonly ISubsonicClient _subsonicClient;
-    private readonly IConfiguration _config;
     private readonly string _subsonicUsername;
 
     public MusicTools(ISubsonicClient subsonicClient, IConfiguration config)
     {
         _subsonicClient = subsonicClient;
-        _config = config;
 
-        _subsonicUsername = _config["Subsonic:Username"] ?? throw new InvalidOperationException("Subsonic username not set");
+        _subsonicUsername = config["Subsonic:Username"] ?? throw new InvalidOperationException("Subsonic username not set");
     }
 
     [AiTool("Search for songs by title, artist or album")]
-    public async Task<string> SearchSongsAsync(
+    public async Task<string> SearchSubsonicSongsAsync(
         [AiParameter("The search query")] string query,
         [AiParameter("Maximum number of results", Required = false)] int limit = 5)
     {
@@ -31,7 +29,7 @@ public class MusicTools : IToolProvider
     }
 
     [AiTool("Get random songs")]
-    public async Task<string> GetRandomSongsAsync([AiParameter("Maximum number of results", Required = false)] int limit = 1)
+    public async Task<string> GetRandomSubsonicSongsAsync([AiParameter("Maximum number of results", Required = false)] int limit = 1)
     {
         var songs = await _subsonicClient.GetRandomSongsAsync(limit);
 
@@ -39,7 +37,7 @@ public class MusicTools : IToolProvider
     }
 
     [AiTool("Get all existing music share links")]
-    public async Task<string> GetSharesAsync()
+    public async Task<string> GetSubsonicSharesAsync()
     {
         var shares = await _subsonicClient.GetSharesAsync();
         shares = shares.Where(s => s.Username.Equals(_subsonicUsername, StringComparison.CurrentCultureIgnoreCase)).ToList();
@@ -47,7 +45,7 @@ public class MusicTools : IToolProvider
     }
 
     [AiTool("Permanently delete a music share link")]
-    public async Task<string> DeleteShareAsync(
+    public async Task<string> DeleteSubsonicShareAsync(
         [AiParameter("The ID of the share to delete")] string shareId)
     {
         var shares = await _subsonicClient.GetSharesAsync();
@@ -63,7 +61,7 @@ public class MusicTools : IToolProvider
     }
 
     [AiTool("Create a new share link for one or more songs. Use SearchSongs first to get song IDs.")]
-    public async Task<string> CreateShareAsync(
+    public async Task<string> CreateSubsonicShareAsync(
         [AiParameter("The IDs of the songs to share")] string[] songIds,
         [AiParameter("Description for the share", Required = false)] string? description = null,
         [AiParameter("Number of days until the share expires", Required = false)] int? expiresInDays = null)

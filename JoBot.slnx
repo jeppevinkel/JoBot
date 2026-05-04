@@ -12,4 +12,5 @@
   <Project Path="JoBot.Discord/JoBot.Discord.csproj" />
   <Project Path="JoBot.Services/JoBot.Services.csproj" />
   <Project Path="JoBot.Subsonic/JoBot.Subsonic.csproj" />
+  <Project Path="JoBot.YouTube/JoBot.YouTube.csproj" />
 </Solution>

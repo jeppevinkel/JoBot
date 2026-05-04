@@ -3,6 +3,7 @@ using JoBot.Data.Extensions;
 using JoBot.Discord.Extensions;
 using JoBot.Services.Extensions;
 using JoBot.Subsonic.Extensions;
+using JoBot.YouTube.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -26,6 +27,7 @@ builder.Logging.ClearProviders().AddSerilog();
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddAiServices(builder.Configuration);
 builder.Services.AddSubsonic(builder.Configuration);
+builder.Services.AddYouTube(builder.Configuration);
 builder.Services.AddDiscordServices(builder.Configuration);
 builder.Services.AddServices(builder.Configuration);
 
