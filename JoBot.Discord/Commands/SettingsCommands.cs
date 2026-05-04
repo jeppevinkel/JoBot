@@ -22,6 +22,7 @@ public class SettingsCommands
     [Command("view")]
     [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
     [RequireGuild]
+    [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages, DiscordPermission.ViewGuildInsights, DiscordPermission.ModerateMembers)]
     public async ValueTask ViewSettingsAsync(SlashCommandContext ctx)
     {
         GuildSettings settings = await _settingsService.GetSettingsAsync(ctx.Guild!.Id);
@@ -57,6 +58,7 @@ public class SettingsCommands
         [Command("prompt")]
         [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
         [RequireGuild]
+        [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages)]
         public async ValueTask SetPromptAsync(SlashCommandContext ctx)
         {
             DiscordModalBuilder modal = new DiscordModalBuilder()
@@ -83,6 +85,7 @@ public class SettingsCommands
         [Command("max-history")]
         [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
         [RequireGuild]
+        [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages)]
         public async ValueTask SetMaxHistoryAsync(
             SlashCommandContext ctx,
             [Parameter("messages"), Description("Number of messages to keep in history (1-100)")]
@@ -90,9 +93,11 @@ public class SettingsCommands
         {
             if (messages is < 1 or > 100)
             {
-                await ctx.RespondAsync(new DiscordInteractionResponseBuilder()
-                    .WithContent("Max history must be between 1 and 100.")
-                    .AsEphemeral());
+                await ctx.Interaction.CreateResponseAsync(
+                    DiscordInteractionResponseType.ChannelMessageWithSource,
+                    new DiscordInteractionResponseBuilder()
+                        .WithContent("Max history must be between 1 and 100.")
+                        .AsEphemeral());
                 return;
             }
 
@@ -101,14 +106,17 @@ public class SettingsCommands
                 MaxHistoryMessages = messages
             });
 
-            await ctx.RespondAsync(new DiscordInteractionResponseBuilder()
-                .WithContent($"Max history messages set to {messages}.")
-                .AsEphemeral());
+            await ctx.Interaction.CreateResponseAsync(
+                DiscordInteractionResponseType.ChannelMessageWithSource,
+                new DiscordInteractionResponseBuilder()
+                    .WithContent($"Max history messages set to {messages}.")
+                    .AsEphemeral());
         }
 
         [Command("temperature")]
         [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
         [RequireGuild]
+        [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages)]
         public async ValueTask SetTemperatureAsync(
             SlashCommandContext ctx,
             [Parameter("temperature"), Description("AI temperature between 0.0 (precise) and 1.0 (creative)")]
@@ -116,9 +124,11 @@ public class SettingsCommands
         {
             if (temperature is < 0.0 or > 1.0)
             {
-                await ctx.RespondAsync(new DiscordInteractionResponseBuilder()
-                    .WithContent("Temperature must be between 0.0 and 1.0.")
-                    .AsEphemeral());
+                await ctx.Interaction.CreateResponseAsync(
+                    DiscordInteractionResponseType.ChannelMessageWithSource,
+                    new DiscordInteractionResponseBuilder()
+                        .WithContent("Temperature must be between 0.0 and 1.0.")
+                        .AsEphemeral());
                 return;
             }
 
@@ -127,9 +137,11 @@ public class SettingsCommands
                 AiTemperature = (decimal)temperature
             });
 
-            await ctx.RespondAsync(new DiscordInteractionResponseBuilder()
-                .WithContent($"Temperature set to {temperature:F1}.")
-                .AsEphemeral());
+            await ctx.Interaction.CreateResponseAsync(
+                DiscordInteractionResponseType.ChannelMessageWithSource,
+                new DiscordInteractionResponseBuilder()
+                    .WithContent($"Temperature set to {temperature:F1}.")
+                    .AsEphemeral());
         }
 
         [Command("volume")]
@@ -163,6 +175,7 @@ public class SettingsCommands
     [Description("Reset a specific setting to its default value")]
     [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
     [RequireGuild]
+    [RequirePermissions(DiscordPermission.ManageGuild)]
     public async ValueTask ResetFieldAsync(
         SlashCommandContext ctx,
         [Parameter("setting"), Description("The setting to reset to its default value")]
@@ -178,6 +191,7 @@ public class SettingsCommands
     [Command("reset-all")]
     [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
     [RequireGuild]
+    [RequirePermissions(DiscordPermission.ManageGuild)]
     public async ValueTask ResetAllAsync(SlashCommandContext ctx)
     {
         await _settingsService.ResetSettingsAsync(ctx.Guild!.Id);
