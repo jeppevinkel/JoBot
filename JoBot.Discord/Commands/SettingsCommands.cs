@@ -22,7 +22,7 @@ public class SettingsCommands
     [Command("view")]
     [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
     [RequireGuild]
-    [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages, DiscordPermission.ViewGuildInsights, DiscordPermission.ModerateMembers)]
+    [RequirePermissions([], [DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages, DiscordPermission.ViewGuildInsights, DiscordPermission.ModerateMembers])]
     public async ValueTask ViewSettingsAsync(SlashCommandContext ctx)
     {
         GuildSettings settings = await _settingsService.GetSettingsAsync(ctx.Guild!.Id);
@@ -58,7 +58,7 @@ public class SettingsCommands
         [Command("prompt")]
         [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
         [RequireGuild]
-        [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages)]
+        [RequirePermissions([], [DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages])]
         public async ValueTask SetPromptAsync(SlashCommandContext ctx)
         {
             DiscordModalBuilder modal = new DiscordModalBuilder()
@@ -85,7 +85,7 @@ public class SettingsCommands
         [Command("max-history")]
         [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
         [RequireGuild]
-        [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages)]
+        [RequirePermissions([], [DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages])]
         public async ValueTask SetMaxHistoryAsync(
             SlashCommandContext ctx,
             [Parameter("messages"), Description("Number of messages to keep in history (1-100)")]
@@ -116,7 +116,7 @@ public class SettingsCommands
         [Command("temperature")]
         [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
         [RequireGuild]
-        [RequirePermissions(DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages)]
+        [RequirePermissions([], [DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages])]
         public async ValueTask SetTemperatureAsync(
             SlashCommandContext ctx,
             [Parameter("temperature"), Description("AI temperature between 0.0 (precise) and 1.0 (creative)")]
@@ -175,7 +175,7 @@ public class SettingsCommands
     [Description("Reset a specific setting to its default value")]
     [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
     [RequireGuild]
-    [RequirePermissions(DiscordPermission.ManageGuild)]
+    [RequirePermissions([], [DiscordPermission.ManageGuild])]
     public async ValueTask ResetFieldAsync(
         SlashCommandContext ctx,
         [Parameter("setting"), Description("The setting to reset to its default value")]
@@ -191,7 +191,7 @@ public class SettingsCommands
     [Command("reset-all")]
     [SlashCommandTypes(DiscordApplicationCommandType.SlashCommand)]
     [RequireGuild]
-    [RequirePermissions(DiscordPermission.ManageGuild)]
+    [RequirePermissions([], [DiscordPermission.ManageGuild])]
     public async ValueTask ResetAllAsync(SlashCommandContext ctx)
     {
         await _settingsService.ResetSettingsAsync(ctx.Guild!.Id);
