@@ -20,17 +20,8 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
         var authorName = await _resolver.ResolveAsync(eventArgs.Author, guild);
         var mentionedNames = await _resolver.ResolveManyAsync(eventArgs.MentionedUsers, guild);
 
-        ChannelInfo? voiceChannel = null;
-        if (guild is not null && guild.VoiceStates.TryGetValue(eventArgs.Author.Id, out DiscordVoiceState? voiceState))
-        {
-            DiscordChannel? channel = await voiceState.GetChannelAsync();
-            if (channel is not null)
-                voiceChannel = new ChannelInfo
-                {
-                    Id = channel.Id.ToString(),
-                    Name = channel.Name
-                };
-        }
+        ChannelInfo? authorVoiceChannel = await ResolveVoiceChannelAsync(guild, eventArgs.Author.Id);
+        var mentionedVoiceChannels = await ResolveManyVoiceChannelsAsync(guild, mentionedNames.Keys);
 
         MessageInfo? referencedMessage = null;
         if (eventArgs.Message.ReferencedMessage is not null)
@@ -61,7 +52,7 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
             {
                 Id = eventArgs.Author.Id.ToString(),
                 DisplayName = authorName,
-                VoiceChannel = voiceChannel
+                VoiceChannel = authorVoiceChannel
             },
             Message = new MessageInfo
             {
@@ -74,9 +65,37 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
                 .Select(kvp => new UserInfo
                 {
                     Id = kvp.Key.ToString(),
-                    DisplayName = kvp.Value
+                    DisplayName = kvp.Value,
+                    VoiceChannel = mentionedVoiceChannels.GetValueOrDefault(kvp.Key)
                 })
                 .ToList()
         };
+    }
+
+    private async Task<ChannelInfo?> ResolveVoiceChannelAsync(DiscordGuild? guild, ulong userId)
+    {
+        if (guild is null || !guild.VoiceStates.TryGetValue(userId, out DiscordVoiceState? voiceState))
+            return null;
+
+        DiscordChannel? channel = await voiceState.GetChannelAsync();
+        if (channel is null)
+            return null;
+
+        return new ChannelInfo
+        {
+            Id = channel.Id.ToString(),
+            Name = channel.Name
+        };
+    }
+
+    private async Task<Dictionary<ulong, ChannelInfo?>> ResolveManyVoiceChannelsAsync(
+        DiscordGuild? guild,
+        IEnumerable<ulong> userIds)
+    {
+        var results = await Task.WhenAll(
+            userIds.Select(async id => (Id: id, Channel: await ResolveVoiceChannelAsync(guild, id)))
+        );
+
+        return results.ToDictionary(r => r.Id, r => r.Channel);
     }
 }
