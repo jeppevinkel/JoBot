@@ -14,7 +14,7 @@ public class ConversationRepository : IConversationRepository
     {
         _contextFactory = contextFactory;
     }
-    
+
     public async Task<IReadOnlyList<ConversationMessage>> GetHistoryAsync(ulong guildId, int limit)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();

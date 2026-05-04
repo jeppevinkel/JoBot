@@ -13,9 +13,9 @@ public static class ServicesExtensions
     {
         services.AddOptions<GuildSettings>()
             .Bind(config.GetSection("GuildDefaults"));
-        
+
         services.AddSingleton<IGuildSettingsService, GuildSettingsService>();
-        
+
         return services;
     }
 }

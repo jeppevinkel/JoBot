@@ -124,7 +124,7 @@ public class SettingsCommands
 
             await _settingsService.UpdateSettingsAsync(ctx.Guild!.Id, new GuildSettingsUpdate
             {
-                AiTemperature = (decimal) temperature
+                AiTemperature = (decimal)temperature
             });
 
             await ctx.RespondAsync(new DiscordInteractionResponseBuilder()

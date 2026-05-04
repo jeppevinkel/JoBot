@@ -15,14 +15,14 @@ public class GuildSettingsRepository : IGuildSettingsRepository
     {
         _contextFactory = contextFactory;
     }
-    
+
     public async Task<GuildSettingsUpdate?> GetOverridesAsync(ulong guildId)
     {
         await using JoBotDbContext context = await _contextFactory.CreateDbContextAsync();
 
         GuildSettingsEntity? entity = await context.GuildSettings
             .FirstOrDefaultAsync(c => c.GuildId == guildId);
-        
+
         if (entity is null) return null;
 
         return new GuildSettingsUpdate
@@ -37,7 +37,7 @@ public class GuildSettingsRepository : IGuildSettingsRepository
     public async Task SaveOverridesAsync(ulong guildId, GuildSettingsUpdate overrides)
     {
         await using JoBotDbContext context = await _contextFactory.CreateDbContextAsync();
-        
+
         GuildSettingsEntity? existing = await context.GuildSettings.FirstOrDefaultAsync(c => c.GuildId == guildId);
 
         if (existing is not null)
@@ -46,7 +46,8 @@ public class GuildSettingsRepository : IGuildSettingsRepository
             existing.MaxHistoryMessages = overrides.MaxHistoryMessages ?? existing.MaxHistoryMessages;
             existing.AiTemperature = overrides.AiTemperature ?? existing.AiTemperature;
             existing.MusicVolume = overrides.MusicVolume ?? existing.MusicVolume;
-        } else
+        }
+        else
         {
             var entity = new GuildSettingsEntity
             {
@@ -64,7 +65,7 @@ public class GuildSettingsRepository : IGuildSettingsRepository
     public async Task ClearOverridesAsync(ulong guildId)
     {
         await using JoBotDbContext context = await _contextFactory.CreateDbContextAsync();
-        
+
         GuildSettingsEntity? existing = await context.GuildSettings.FirstOrDefaultAsync(c => c.GuildId == guildId);
 
         if (existing is not null)
@@ -77,12 +78,12 @@ public class GuildSettingsRepository : IGuildSettingsRepository
     public async Task ClearFieldAsync(ulong guildId, SettingField field)
     {
         await using JoBotDbContext context = await _contextFactory.CreateDbContextAsync();
-        
+
         GuildSettingsEntity? existing = await context.GuildSettings
             .FirstOrDefaultAsync(c => c.GuildId == guildId);
-        
+
         if (existing is null) return;
-        
+
         switch (field)
         {
             case SettingField.SystemPrompt:
@@ -100,7 +101,7 @@ public class GuildSettingsRepository : IGuildSettingsRepository
             default:
                 throw new ArgumentOutOfRangeException(nameof(field));
         }
-        
+
         await context.SaveChangesAsync();
     }
 }

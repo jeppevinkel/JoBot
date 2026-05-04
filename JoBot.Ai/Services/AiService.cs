@@ -23,10 +23,10 @@ public class AiService : IAiService
     private readonly ILogger<AiService> _logger;
     private readonly AnthropicClient _anthropicClient;
     private readonly AiOptions _options;
-    
+
     private readonly ConcurrentDictionary<ulong, GuildConversationHistory> _guildData = new();
     private readonly ToolFactory _toolFactory;
-    
+
     private static readonly List<SystemMessage> SystemPrompt =
     [
         new("""
@@ -69,9 +69,9 @@ public class AiService : IAiService
         try
         {
             await history.EnsureInitializedAsync();
-            
+
             GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
-            
+
             await history.AddAsync(new Message(RoleType.User,
                 JsonSerializer.Serialize(payload, JsonOptions)));
 
@@ -174,7 +174,7 @@ public class AiService : IAiService
             static (id, args) => new GuildConversationHistory(
                 id, args.Repository, args.Settings),
             (Repository: _conversationRepository, Settings: _settingsService));
-    
+
     private async Task<ApiCallResult> GetClaudeResponseAsync(
         MessageParameters parameters,
         ulong guildId,

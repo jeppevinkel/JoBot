@@ -29,7 +29,7 @@ public static class DataExtensions
 
         return services;
     }
-    
+
     public static async Task MigrateAsync(this IHost host)
     {
         using IServiceScope scope = host.Services.CreateScope();

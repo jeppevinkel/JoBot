@@ -14,7 +14,7 @@ public class GuildConversationHistory
     {
         WriteIndented = false
     };
-    
+
     private readonly ulong _guildId;
     private readonly IConversationRepository _repository;
     private readonly IGuildSettingsService _settingsService;
@@ -33,23 +33,23 @@ public class GuildConversationHistory
         _repository = repository;
         _settingsService = settingsService;
     }
-    
+
     public async Task EnsureInitializedAsync()
     {
         if (_initialized) return;
 
         GuildSettings settings = await _settingsService.GetSettingsAsync(_guildId);
-        
+
         // Load extra to account for potential orphaned messages at start
         var stored = await _repository.GetHistoryAsync(_guildId, settings.MaxHistoryMessages * 2);
         _messages.AddRange(stored.Select(m => MessageSerializer.Deserialize(m.ContentJson)));
-        
+
         SanitizeStart();
         TrimIfNeeded(settings.MaxHistoryMessages);
-        
+
         _initialized = true;
     }
-    
+
     public async Task AddAsync(Message message)
     {
         _messages.Add(message);
@@ -64,14 +64,14 @@ public class GuildConversationHistory
             Timestamp = DateTimeOffset.UtcNow
         });
     }
-    
+
     public async Task ClearAsync()
     {
         _messages.Clear();
         _initialized = false;
         await _repository.ClearHistoryAsync(_guildId);
     }
-    
+
     private void TrimIfNeeded(int maxMessages)
     {
         while (_messages.Count > maxMessages)
@@ -82,10 +82,10 @@ public class GuildConversationHistory
             if (nextBoundary <= 0) break;
             _messages.RemoveRange(0, nextBoundary);
         }
-        
+
         SanitizeStart();
     }
-    
+
     // Finds the index of the next regular user message (not a tool result)
     // Everything before that index is safe to remove as a complete unit
     private int FindNextTurnBoundary()
@@ -97,14 +97,14 @@ public class GuildConversationHistory
         }
         return -1;
     }
-    
+
     // Removes any leading tool_result messages that have no preceding tool_use
     private void SanitizeStart()
     {
         while (_messages.Count > 0 && IsToolResult(_messages[0]))
             _messages.RemoveAt(0);
     }
-    
+
     private static bool IsToolResult(Message message) =>
         message.Content.Count > 0 && message.Content.All(c => c is ToolResultContent);
 }

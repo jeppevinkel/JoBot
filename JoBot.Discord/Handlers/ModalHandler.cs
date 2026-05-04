@@ -8,12 +8,12 @@ namespace JoBot.Discord.Handlers;
 public class ModalHandler : IEventHandler<ModalSubmittedEventArgs>
 {
     private readonly ILogger<ModalHandler> _logger;
-    
+
     public ModalHandler(ILogger<ModalHandler> logger)
     {
         _logger = logger;
     }
-    
+
     public async Task HandleEventAsync(DiscordClient client, ModalSubmittedEventArgs eventArgs)
     {
         _logger.LogInformation("Modal submitted: {Modal}", eventArgs.Interaction.Data.CustomId);
@@ -26,7 +26,7 @@ public class ModalHandler : IEventHandler<ModalSubmittedEventArgs>
                 break;
         }
     }
-    
+
     private async Task HandleSetPromptAsync(ModalSubmittedEventArgs eventArgs)
     {
         IModalSubmission prompt = eventArgs.Values["system_prompt"];

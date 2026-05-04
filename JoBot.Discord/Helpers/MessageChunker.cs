@@ -3,7 +3,7 @@
 public static class MessageChunker
 {
     private const int MaxLength = 2000;
-    
+
     public static IEnumerable<string> Split(string content)
     {
         if (content.Length <= MaxLength)
@@ -21,7 +21,7 @@ public static class MessageChunker
                 yield return content[start..].Trim();
                 break;
             }
-            
+
             var end = start + MaxLength;
 
             // Search backwards from end for a clean split point
