@@ -15,7 +15,7 @@ public static class DataExtensions
         IConfiguration config)
     {
         var connectionString = config.GetConnectionString("JoBot");
-        
+
         if (connectionString is null)
         {
             var dbPath = Path.Combine(AppContext.BaseDirectory, "data", "database.sqlite");
