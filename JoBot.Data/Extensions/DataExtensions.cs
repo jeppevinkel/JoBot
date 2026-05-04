@@ -1,5 +1,4 @@
-﻿using JoBot.Core.Helpers;
-using JoBot.Core.Interfaces.Repositories;
+﻿using JoBot.Core.Interfaces.Repositories;
 using JoBot.Data.Context;
 using JoBot.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +14,14 @@ public static class DataExtensions
         this IServiceCollection services,
         IConfiguration config)
     {
-        var connectionString = config.GetConnectionString("JoBot") ?? "Data Source=/data/database.sqlite";
+        var connectionString = config.GetConnectionString("JoBot");
+        
+        if (connectionString is null)
+        {
+            var dbPath = Path.Combine(AppContext.BaseDirectory, "data", "database.sqlite");
+            Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+            connectionString = $"Data Source={dbPath}";
+        }
 
         services.AddDbContextFactory<JoBotDbContext>(options =>
             options.UseSqlite(connectionString));
