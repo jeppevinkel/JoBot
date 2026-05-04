@@ -17,7 +17,7 @@ public class MusicTools : IToolProvider
     {
         _subsonicClient = subsonicClient;
         _config = config;
-        
+
         _subsonicUsername = _config["Subsonic:Username"] ?? throw new InvalidOperationException("Subsonic username not set");
     }
 
@@ -37,7 +37,7 @@ public class MusicTools : IToolProvider
 
         return songs.Count == 0 ? ToolResult.Failure("No songs found") : ToolResult.Success(songs);
     }
-    
+
     [AiTool("Get all existing music share links")]
     public async Task<string> GetSharesAsync()
     {
@@ -45,7 +45,7 @@ public class MusicTools : IToolProvider
         shares = shares.Where(s => s.Username.Equals(_subsonicUsername, StringComparison.CurrentCultureIgnoreCase)).ToList();
         return shares.Count == 0 ? ToolResult.Failure("No shares found") : ToolResult.Success(shares);
     }
-    
+
     [AiTool("Permanently delete a music share link")]
     public async Task<string> DeleteShareAsync(
         [AiParameter("The ID of the share to delete")] string shareId)
@@ -57,11 +57,11 @@ public class MusicTools : IToolProvider
         {
             return ToolResult.Failure($"Share with ID {shareId} not found");
         }
-        
+
         await _subsonicClient.DeleteShareAsync(shareId);
         return ToolResult.Success($"Share with ID {shareId} deleted");
     }
-    
+
     [AiTool("Create a new share link for one or more songs. Use SearchSongs first to get song IDs.")]
     public async Task<string> CreateShareAsync(
         [AiParameter("The IDs of the songs to share")] string[] songIds,
