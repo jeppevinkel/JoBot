@@ -13,6 +13,7 @@ A Discord bot built on .NET 10 with Claude AI integration, music streaming, and 
 | `JoBot.Data` | EF Core data access layer with SQLite. Contains migrations. |
 | `JoBot.Services` | Business logic and configuration services. |
 | `JoBot.Subsonic` | Subsonic music server client integration. |
+| `JoBot.YouTube` | YouTube music integration, exposes music tools via Lavalink. |
 
 ## Docker Compose
 
