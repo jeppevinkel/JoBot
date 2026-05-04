@@ -15,11 +15,7 @@ public static class DataExtensions
         this IServiceCollection services,
         IConfiguration config)
     {
-        var connectionString = config.GetConnectionString("JoBot");
-
-        ConfigurationValidator.Validate(
-            ("ConnectionStrings:JoBot", connectionString)
-        );
+        var connectionString = config.GetConnectionString("JoBot") ?? "Data Source=/data/database.sqlite";
 
         services.AddDbContextFactory<JoBotDbContext>(options =>
             options.UseSqlite(connectionString));
