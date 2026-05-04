@@ -1,5 +1,6 @@
 ﻿using JoBot.Core.Helpers;
 using JoBot.Core.Interfaces;
+using JoBot.Subsonic.Interfaces;
 using JoBot.Subsonic.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

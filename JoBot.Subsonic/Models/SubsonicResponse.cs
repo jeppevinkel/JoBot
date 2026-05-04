@@ -9,4 +9,5 @@ public class SubsonicResponse
     // Add a property per endpoint you use
     public SearchResult3? SearchResult3 { get; init; }
     public RandomSongs? RandomSongs { get; init; }
+    public Shares? Shares { get; init; }
 }

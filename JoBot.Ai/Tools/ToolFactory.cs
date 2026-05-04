@@ -121,6 +121,7 @@ public class ToolFactory
         _ when type == typeof(int) || type == typeof(long) => "integer",
         _ when type == typeof(float) || type == typeof(double) || type == typeof(decimal) => "number",
         _ when type == typeof(bool) => "boolean",
+        _ when type.IsArray || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>)) => "array",
         _ => "string"
     };
 
