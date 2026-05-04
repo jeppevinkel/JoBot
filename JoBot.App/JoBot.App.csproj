@@ -19,7 +19,9 @@
 
     <ItemGroup>
       <ProjectReference Include="..\JoBot.Ai\JoBot.Ai.csproj" />
+      <ProjectReference Include="..\JoBot.Data\JoBot.Data.csproj" />
       <ProjectReference Include="..\JoBot.Discord\JoBot.Discord.csproj" />
+      <ProjectReference Include="..\JoBot.Services\JoBot.Services.csproj" />
       <ProjectReference Include="..\JoBot.Subsonic\JoBot.Subsonic.csproj" />
     </ItemGroup>
 

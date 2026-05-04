@@ -13,6 +13,9 @@ public record MessagePayload
     [JsonPropertyName("message")]
     public required MessageInfo Message { get; init; }
 
+    [JsonPropertyName("referenced_message")]
+    public MessageInfo? ReferencedMessage { get; init; }
+
     [JsonPropertyName("mentioned_users")]
     public IReadOnlyList<UserInfo> MentionedUsers { get; init; } = [];
 }

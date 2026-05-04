@@ -1,10 +1,10 @@
 ﻿using DSharpPlus;
-using DSharpPlus.Entities;
 using DSharpPlus.EventArgs;
 using JoBot.Core.Actions;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
 using JoBot.Discord.Builders;
+using JoBot.Discord.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace JoBot.Discord.Handlers;
@@ -45,10 +45,18 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
             switch (action)
             {
                 case ReplyAction reply:
-                    await eventArgs.Message.RespondAsync(reply.Content);
+                    var replyChunks = MessageChunker.Split(reply.Content).ToList();
+                    for (var i = 0; i < replyChunks.Count; i++)
+                    {
+                        if (i == 0)
+                            await eventArgs.Message.RespondAsync(replyChunks[i]);
+                        else
+                            await eventArgs.Channel.SendMessageAsync(replyChunks[i]);
+                    }
                     break;
                 case RespondAction response:
-                    await eventArgs.Channel.SendMessageAsync(response.Content);
+                    foreach (var chunk in MessageChunker.Split(response.Content))
+                        await eventArgs.Channel.SendMessageAsync(chunk);
                     break;
                 case IgnoreAction:
                     _logger.LogDebug("AI chose to ignore message {MessageId}", payload.Message.Id);

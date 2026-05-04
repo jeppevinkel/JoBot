@@ -10,6 +10,8 @@ COPY ["JoBot.Discord/JoBot.Discord.csproj", "JoBot.Discord/"]
 COPY ["JoBot.Core/JoBot.Core.csproj", "JoBot.Core/"]
 COPY ["JoBot.Ai/JoBot.Ai.csproj", "JoBot.Ai/"]
 COPY ["JoBot.Subsonic/JoBot.Subsonic.csproj", "JoBot.Subsonic/"]
+COPY ["JoBot.Data/JoBot.Data.csproj", "JoBot.Data/"]
+COPY ["JoBot.Services/JoBot.Services.csproj", "JoBot.Services/"]
 RUN dotnet restore "JoBot.App/JoBot.App.csproj"
 COPY . .
 WORKDIR "/src/JoBot.App"

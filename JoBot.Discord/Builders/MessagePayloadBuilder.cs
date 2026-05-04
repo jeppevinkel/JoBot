@@ -16,7 +16,7 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
 
     public async Task<MessagePayload> BuildAsync(MessageCreatedEventArgs eventArgs)
     {
-        var guild = eventArgs.Guild;
+        DiscordGuild? guild = eventArgs.Guild;
         var authorName = await _resolver.ResolveAsync(eventArgs.Author, guild);
         var mentionedNames = await _resolver.ResolveManyAsync(eventArgs.MentionedUsers, guild);
 
@@ -30,6 +30,17 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
                     Id = channel.Id.ToString(),
                     Name = channel.Name
                 };
+        }
+
+        MessageInfo? referencedMessage = null;
+        if (eventArgs.Message.ReferencedMessage is not null)
+        {
+            referencedMessage = new MessageInfo
+            {
+                Id = eventArgs.Message.ReferencedMessage.Id.ToString(),
+                Content = eventArgs.Message.ReferencedMessage.Content,
+                Timestamp = eventArgs.Message.ReferencedMessage.Timestamp
+            };
         }
 
         return new MessagePayload
@@ -58,6 +69,7 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
                 Content = eventArgs.Message.Content,
                 Timestamp = eventArgs.Message.Timestamp
             },
+            ReferencedMessage = referencedMessage,
             MentionedUsers = mentionedNames
                 .Select(kvp => new UserInfo
                 {

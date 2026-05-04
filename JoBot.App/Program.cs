@@ -1,5 +1,7 @@
 ﻿using JoBot.Ai.Extensions;
+using JoBot.Data.Extensions;
 using JoBot.Discord.Extensions;
+using JoBot.Services.Extensions;
 using JoBot.Subsonic.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,14 +23,17 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Logging.ClearProviders().AddSerilog();
 
-builder.Services.AddDiscordServices(builder.Configuration);
+builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddAiServices(builder.Configuration);
 builder.Services.AddSubsonic(builder.Configuration);
+builder.Services.AddDiscordServices(builder.Configuration);
+builder.Services.AddServices(builder.Configuration);
 
 IHost app = builder.Build();
 
 try
 {
+    await app.MigrateAsync();
     await app.RunAsync();
 }
 finally

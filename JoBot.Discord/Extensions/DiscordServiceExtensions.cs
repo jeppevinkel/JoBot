@@ -1,7 +1,11 @@
 ﻿using DSharpPlus;
+using DSharpPlus.Commands;
+using DSharpPlus.Commands.Processors.SlashCommands;
+using DSharpPlus.Commands.Processors.SlashCommands.InteractionNamingPolicies;
 using DSharpPlus.Extensions;
 using JoBot.Core.Interfaces;
 using JoBot.Discord.Builders;
+using JoBot.Discord.Commands;
 using JoBot.Discord.Handlers;
 using JoBot.Discord.Resolvers;
 using JoBot.Discord.Services;
@@ -22,6 +26,21 @@ public static class DiscordServiceExtensions
         services.AddHostedService<DiscordBotService>();
         services.AddDiscordClient(token, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
 
+        services.AddCommandsExtension((provider, extension) =>
+        {
+            SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
+            {
+                NamingPolicy = new KebabCaseNamingPolicy(),
+            });
+
+            extension.AddCommands<SettingsCommands>();
+
+            extension.AddProcessor(slashCommandProcessor);
+        }, new CommandsConfiguration
+        {
+            DebugGuildId = 330295897638436864
+        });
+
         services.AddLavalink();
         services.ConfigureLavalink(c =>
         {
@@ -35,6 +54,7 @@ public static class DiscordServiceExtensions
         {
             b.AddEventHandlers<ReadyHandler>();
             b.AddEventHandlers<MessageHandler>();
+            b.AddEventHandlers<ModalHandler>();
         });
         services.AddSingleton<IDisplayNameResolver, DisplayNameResolver>();
         services.AddSingleton<IMessagePayloadBuilder, MessagePayloadBuilder>();

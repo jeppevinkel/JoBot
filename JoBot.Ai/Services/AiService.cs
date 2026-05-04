@@ -3,13 +3,14 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
-using Anthropic.SDK.Constants;
 using Anthropic.SDK.Messaging;
 using JoBot.Ai.Configuration;
 using JoBot.Ai.History;
+using JoBot.Ai.Models;
 using JoBot.Ai.Tools;
 using JoBot.Core.Actions;
 using JoBot.Core.Interfaces;
+using JoBot.Core.Interfaces.Repositories;
 using JoBot.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,10 +23,10 @@ public class AiService : IAiService
     private readonly ILogger<AiService> _logger;
     private readonly AnthropicClient _anthropicClient;
     private readonly AiOptions _options;
-
+    
     private readonly ConcurrentDictionary<ulong, GuildConversationHistory> _guildData = new();
     private readonly ToolFactory _toolFactory;
-
+    
     private static readonly List<SystemMessage> SystemPrompt =
     [
         new("""
@@ -35,16 +36,22 @@ public class AiService : IAiService
             You are signed in as SCP-004-J ALPHA (610976428246433827).
             """)
     ];
+    private readonly IConversationRepository _conversationRepository;
+    private readonly IGuildSettingsService _settingsService;
 
     public AiService(
         ILogger<AiService> logger,
         AnthropicClient anthropicClient,
         IEnumerable<IToolProvider> toolProviders,
+        IConversationRepository conversationRepository,
+        IGuildSettingsService settingsService,
         IOptions<AiOptions> options)
     {
         _logger = logger;
         _anthropicClient = anthropicClient;
         _options = options.Value;
+        _conversationRepository = conversationRepository;
+        _settingsService = settingsService;
 
         _toolFactory = new ToolFactory(toolProviders);
     }
@@ -61,34 +68,44 @@ public class AiService : IAiService
         await history.Lock.WaitAsync(cancellationToken);
         try
         {
-            var json = JsonSerializer.Serialize(payload, JsonOptions);
-            history.Add(new Message(RoleType.User, json));
+            await history.EnsureInitializedAsync();
+            
+            GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
+            
+            await history.AddAsync(new Message(RoleType.User,
+                JsonSerializer.Serialize(payload, JsonOptions)));
 
             var parameters = new MessageParameters
             {
                 Messages = history.Messages.ToList(),
-                MaxTokens = 4096,
-                Temperature = 0.7m,
-                Model = AnthropicModels.Claude46Sonnet,
+                MaxTokens = _options.MaxTokens,
+                Temperature = settings.AiTemperature,
+                Model = _options.Model,
                 Tools = _toolFactory.Tools.ToList(),
                 Stream = false,
-                System = SystemPrompt
+                System = [new SystemMessage(settings.SystemPrompt)]
             };
 
-            MessageResponse? response =
-                await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
-            Message? assistantMessage = response.Message;
+            ApiCallResult result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
+            MessageResponse response;
+            if (result is not ApiCallSuccess { Response: var claudeResponse })
+            {
+                // Compiler knows this must be ApiCallError
+                yield return ((ApiCallError)result).Error;
+                yield break;
+            }
+            response = claudeResponse;
 
-            if (assistantMessage is null)
+            if (response.Message is null)
             {
                 yield return new IgnoreAction();
                 yield break;
             }
 
-            history.Add(assistantMessage);
+            await history.AddAsync(response.Message);
 
             var toolIterations = 0;
-            while (response.ToolCalls.Count > 0 && toolIterations < _options.MaxToolIterations)
+            while (response.ToolCalls?.Count > 0 && toolIterations < _options.MaxToolIterations)
             {
                 toolIterations++;
 
@@ -104,24 +121,32 @@ public class AiService : IAiService
                 {
                     try
                     {
-                        var result = await _toolFactory.InvokeAsync(
+                        var toolResult = await _toolFactory.InvokeAsync(
                             toolCall.Name,
                             toolCall.Arguments);
-                        _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, result);
-                        history.Add(new Message(toolCall, result));
+                        _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, toolResult);
+                        await history.AddAsync(new Message(toolCall, toolResult));
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error invoking tool call {ToolName}", toolCall.Name);
-                        history.Add(new Message(toolCall, ex.ToString()));
+                        await history.AddAsync(new Message(toolCall, ex.ToString()));
                     }
                 }
 
                 parameters.Messages = history.Messages.ToList();
-                response = await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
+                result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
+                if (result is not ApiCallSuccess { Response: var secondClaudeResponse })
+                {
+                    // Compiler knows this must be ApiCallError
+                    yield return ((ApiCallError)result).Error;
+                    yield break;
+                }
+
+                response = secondClaudeResponse;
 
                 if (response.Message is not null)
-                    history.Add(response.Message);
+                    await history.AddAsync(response.Message);
             }
 
             if (toolIterations >= _options.MaxToolIterations)
@@ -144,5 +169,31 @@ public class AiService : IAiService
     }
 
     private GuildConversationHistory GetGuildHistory(ulong guildId) =>
-        _guildData.GetOrAdd(guildId, static (_, opts) => new GuildConversationHistory(opts), _options);
+        _guildData.GetOrAdd(
+            guildId,
+            static (id, args) => new GuildConversationHistory(
+                id, args.Repository, args.Settings),
+            (Repository: _conversationRepository, Settings: _settingsService));
+    
+    private async Task<ApiCallResult> GetClaudeResponseAsync(
+        MessageParameters parameters,
+        ulong guildId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            MessageResponse response = await _anthropicClient.Messages.GetClaudeMessageAsync(parameters, cancellationToken);
+            return new ApiCallSuccess(response);
+        }
+        catch (HttpRequestException ex) when (ex.Message.Contains("content filtering"))
+        {
+            _logger.LogWarning("Response blocked by content filtering for guild {GuildId}", guildId);
+            return new ApiCallError(new ReplyAction { Content = "I'm not able to respond to that request." });
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "API request failed for guild {GuildId}", guildId);
+            return new ApiCallError(new ReplyAction { Content = "Something went wrong communicating with the AI." });
+        }
+    }
 }
