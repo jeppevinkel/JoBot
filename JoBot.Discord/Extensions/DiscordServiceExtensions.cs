@@ -2,6 +2,7 @@
 using DSharpPlus.Commands;
 using DSharpPlus.Commands.Processors.SlashCommands;
 using DSharpPlus.Commands.Processors.SlashCommands.InteractionNamingPolicies;
+using DSharpPlus.Commands.Processors.TextCommands;
 using DSharpPlus.Extensions;
 using JoBot.Core.Interfaces;
 using JoBot.Discord.Builders;
@@ -33,9 +34,15 @@ public static class DiscordServiceExtensions
                 NamingPolicy = new KebabCaseNamingPolicy(),
             });
 
-            extension.AddCommands<SettingsCommands>();
-
             extension.AddProcessor(slashCommandProcessor);
+            // Force TextCommandProcessor to be configured but never match
+            var neverMatchResolver = new NeverMatchPrefixResolver();
+            extension.AddProcessor(new TextCommandProcessor(new TextCommandConfiguration
+            {
+                PrefixResolver = neverMatchResolver.ResolvePrefixAsync
+            }));
+            
+            extension.AddCommands<SettingsCommands>();
         }, new CommandsConfiguration
         {
             DebugGuildId = 330295897638436864
