@@ -41,7 +41,7 @@ public static class DiscordServiceExtensions
             {
                 PrefixResolver = neverMatchResolver.ResolvePrefixAsync
             }));
-            
+
             extension.AddCommands<SettingsCommands>();
         }, new CommandsConfiguration
         {
