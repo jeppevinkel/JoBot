@@ -10,7 +10,7 @@ public class TtsAudioServer : IHostedService
     private readonly ILogger<TtsAudioServer> _logger;
     private readonly HttpListener _listener;
     private CancellationTokenSource? _cts;
-    
+
     public int Port { get; } = 5756;
 
     public TtsAudioServer(ITtsAudioStore store, ILogger<TtsAudioServer> logger)
@@ -20,7 +20,7 @@ public class TtsAudioServer : IHostedService
         _listener = new HttpListener();
         _listener.Prefixes.Add($"http://*:{Port}/tts/");
     }
-    
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -37,7 +37,7 @@ public class TtsAudioServer : IHostedService
         _listener.Stop();
         return Task.CompletedTask;
     }
-    
+
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -53,7 +53,7 @@ public class TtsAudioServer : IHostedService
             }
         }
     }
-    
+
     private async Task HandleRequestAsync(HttpListenerContext context)
     {
         var id = context.Request.Url?.Segments.LastOrDefault();

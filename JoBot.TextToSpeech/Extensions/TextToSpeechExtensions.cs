@@ -24,7 +24,7 @@ public static class TextToSpeechExtensions
         services.AddHostedService(p => p.GetRequiredService<TtsAudioServer>());
         services.AddSingleton<ITtsService, ElevenLabsService>();
         services.AddSingleton<IToolProvider, TextToSpeechTools>();
-        
+
         return services;
     }
 }

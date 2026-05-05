@@ -98,7 +98,7 @@ public class LavalinkVoiceService : IVoiceService
             return false;
         }
     }
-    
+
     public async Task<bool> PlayTtsAsync(ulong guildId, string ttsUrl)
     {
         try

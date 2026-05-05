@@ -7,12 +7,12 @@ namespace JoBot.TextToSpeech.Tools;
 public class TextToSpeechTools : IToolProvider
 {
     private readonly ITtsService _ttsService;
-    
+
     public TextToSpeechTools(ITtsService ttsService)
     {
         _ttsService = ttsService;
     }
-    
+
     [AiTool("Generate text-to-speech audio")]
     public async Task<string> GenerateTextToSpeechAsync(
         [AiParameter("The text to convert to speech")] string text)

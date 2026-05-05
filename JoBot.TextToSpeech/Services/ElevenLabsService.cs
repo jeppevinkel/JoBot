@@ -21,12 +21,12 @@ public class ElevenLabsService : ITtsService
         _client = client;
         _config = config;
     }
-    
+
     public async Task<string> GenerateAsync(string text, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Text cannot be null or whitespace", nameof(text));
-        
+
         Voice voice = await GetVoice();
         var request = new TextToSpeechRequest(voice, text, outputFormat: OutputFormat.MP3_44100_128);
         VoiceClip response = await _client.TextToSpeechEndpoint.TextToSpeechAsync(request, cancellationToken: cancellationToken);
@@ -34,7 +34,7 @@ public class ElevenLabsService : ITtsService
         var id = _store.Add(audio);
         return $"http://host.docker.internal:{_server.Port}/tts/{id}";
     }
-    
+
     public async Task<Voice> GetVoice()
     {
         var voiceId = _config["ElevenLabs:VoiceId"] ?? "21m00Tcm4TlvDq8ikWAM";
