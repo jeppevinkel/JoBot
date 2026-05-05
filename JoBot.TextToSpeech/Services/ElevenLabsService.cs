@@ -26,13 +26,15 @@ public class ElevenLabsService : ITtsService
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Text cannot be null or whitespace", nameof(text));
+        
+        var hostName = _config["TextToSpeech:HostName"] ?? "http://host.docker.internal";
 
         Voice voice = await GetVoice();
         var request = new TextToSpeechRequest(voice, text, outputFormat: OutputFormat.MP3_44100_128);
         VoiceClip response = await _client.TextToSpeechEndpoint.TextToSpeechAsync(request, cancellationToken: cancellationToken);
         var audio = response.ClipData.ToArray();
         var id = _store.Add(audio);
-        return $"http://host.docker.internal:{_server.Port}/tts/{id}";
+        return $"{hostName}:{_server.Port}/tts/{id}";
     }
 
     public async Task<Voice> GetVoice()
