@@ -23,6 +23,7 @@
       <ProjectReference Include="..\JoBot.Discord\JoBot.Discord.csproj" />
       <ProjectReference Include="..\JoBot.Services\JoBot.Services.csproj" />
       <ProjectReference Include="..\JoBot.Subsonic\JoBot.Subsonic.csproj" />
+      <ProjectReference Include="..\JoBot.TextToSpeech\JoBot.TextToSpeech.csproj" />
       <ProjectReference Include="..\JoBot.YouTube\JoBot.YouTube.csproj" />
     </ItemGroup>
 

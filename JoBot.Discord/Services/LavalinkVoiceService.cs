@@ -1,5 +1,6 @@
 ﻿using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
+using JoBot.Discord.Lavalink.Players;
 using Lavalink4NET;
 using Lavalink4NET.Players;
 using Lavalink4NET.Players.Queued;
@@ -32,7 +33,11 @@ public class LavalinkVoiceService : IVoiceService
                 InitialVolume = 0.5f
             };
 
-            await _audioService.Players.JoinAsync(guildId, channelId, PlayerFactory.Queued, Options.Create(options));
+            await _audioService.Players.JoinAsync<TtsQueuedPlayer, QueuedLavalinkPlayerOptions>(
+                guildId,
+                channelId,
+                TtsQueuedPlayer.CreateAsync,
+                Options.Create(options));
 
             _logger.LogInformation("Joined voice channel {ChannelId} in guild {GuildId}", channelId, guildId);
             return true;
@@ -93,6 +98,39 @@ public class LavalinkVoiceService : IVoiceService
             return false;
         }
     }
+    
+    public async Task<bool> PlayTtsAsync(ulong guildId, string ttsUrl)
+    {
+        try
+        {
+            var player = await GetPlayerAsync(guildId);
+            if (player is null)
+            {
+                _logger.LogWarning("No player found for guild {GuildId}", guildId);
+                return false;
+            }
+
+            var track = await _audioService.Tracks.LoadTrackAsync(
+                ttsUrl,
+                TrackSearchMode.None);
+
+            if (track is null)
+            {
+                _logger.LogWarning("Could not load TTS track for guild {GuildId}", guildId);
+                return false;
+            }
+
+            await player.PlayTtsAsync(track);
+
+            _logger.LogInformation("Playing TTS in guild {GuildId}", guildId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error playing TTS for guild {GuildId}", guildId);
+            return false;
+        }
+    }
 
     public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl)
     {
@@ -121,14 +159,14 @@ public class LavalinkVoiceService : IVoiceService
 
     public async Task SkipAsync(ulong guildId)
     {
-        QueuedLavalinkPlayer? player = await GetPlayerAsync(guildId);
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
         if (player is null) return;
         await player.SkipAsync();
     }
 
     public async Task<QueueInfo?> GetQueueAsync(ulong guildId)
     {
-        QueuedLavalinkPlayer? player = await GetPlayerAsync(guildId);
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
         if (player is null)
             return null;
 
@@ -174,10 +212,10 @@ public class LavalinkVoiceService : IVoiceService
         return player?.State == PlayerState.Playing;
     }
 
-    private async Task<QueuedLavalinkPlayer?> GetPlayerAsync(ulong guildId)
+    private async Task<TtsQueuedPlayer?> GetPlayerAsync(ulong guildId)
     {
         var result = await _audioService.Players
-            .GetPlayerAsync<QueuedLavalinkPlayer>(guildId);
+            .GetPlayerAsync<TtsQueuedPlayer>(guildId);
 
         return result;
     }

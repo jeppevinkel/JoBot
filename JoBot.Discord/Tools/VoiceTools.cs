@@ -41,6 +41,17 @@ public class VoiceTools : IToolProvider
             : ToolResult.Failure("Failed to start playback. Ensure the bot is connected to a voice channel first.");
     }
 
+    [AiTool("Play TTS audio from a stream URL in the currently connected voice channel (this temporarily interrupts any ongoing audio playback)")]
+    public async Task<string> PlayTtsAsync(
+        [AiParameter("Guild ID")] ulong guildId,
+        [AiParameter("The stream URL of the audio to play")] string streamUrl)
+    {
+        var success = await _voiceService.PlayTtsAsync(guildId, streamUrl);
+        return success
+            ? ToolResult.Success("Playback started.")
+            : ToolResult.Failure("Failed to start playback. Ensure the bot is connected to a voice channel first.");
+    }
+
     [AiTool("Stop audio playback in the current voice channel")]
     public async Task<string> StopAsync(
         [AiParameter("Guild ID")] ulong guildId)

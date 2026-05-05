@@ -3,6 +3,7 @@ using JoBot.Data.Extensions;
 using JoBot.Discord.Extensions;
 using JoBot.Services.Extensions;
 using JoBot.Subsonic.Extensions;
+using JoBot.TextToSpeech.Extensions;
 using JoBot.YouTube.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ builder.Services.AddSubsonic(builder.Configuration);
 builder.Services.AddYouTube(builder.Configuration);
 builder.Services.AddDiscordServices(builder.Configuration);
 builder.Services.AddServices(builder.Configuration);
+builder.Services.AddTextToSpeech(builder.Configuration);
 
 IHost app = builder.Build();
 
