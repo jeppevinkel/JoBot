@@ -26,7 +26,7 @@ public class ElevenLabsService : ITtsService
     {
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Text cannot be null or whitespace", nameof(text));
-        
+
         var hostName = _config["TextToSpeech:HostName"] ?? "http://host.docker.internal";
 
         Voice voice = await GetVoice();
