@@ -10,13 +10,13 @@ public class TtsAudioStore : ITtsAudioStore, IHostedService
 {
     // How often the cleanup loop runs — well within the minimum 15-min active TTL
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(2);
-    
+
     private readonly ConcurrentDictionary<string, TtsAudioEntry> _cache = new();
     private readonly ILogger<TtsAudioStore> _logger;
-    
+
     private CancellationTokenSource? _cts;
     private Task? _cleanupTask;
-    
+
     public TtsAudioStore(ILogger<TtsAudioStore> logger)
     {
         _logger = logger;
@@ -25,11 +25,11 @@ public class TtsAudioStore : ITtsAudioStore, IHostedService
     public string Add(byte[] audio, string? title = null)
     {
         var id = Guid.NewGuid().ToString("N");
-        
+
         var data = title is { Length: > 0 }
             ? Id3TagWriter.PrependTitle(audio, title)
             : audio;
-        
+
         _cache[id] = new TtsAudioEntry(data);
         _logger.LogDebug("Added TTS audio entry {Id} (title: {Title})", id, title ?? "<none>");
         return id;
@@ -58,14 +58,14 @@ public class TtsAudioStore : ITtsAudioStore, IHostedService
         if (_cache.TryRemove(id, out _))
             _logger.LogDebug("Manually removed TTS audio entry {Id}", id);
     }
-    
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cleanupTask = Task.Run(() => CleanupLoopAsync(_cts.Token), _cts.Token);
         return Task.CompletedTask;
     }
-    
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _cts?.Cancel();
@@ -82,7 +82,7 @@ public class TtsAudioStore : ITtsAudioStore, IHostedService
             }
         }
     }
-    
+
     private async Task CleanupLoopAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -105,7 +105,7 @@ public class TtsAudioStore : ITtsAudioStore, IHostedService
         // One final sweep on shutdown
         EvictExpiredEntries();
     }
-    
+
     private void EvictExpiredEntries()
     {
         // Snapshot the keys first to avoid enumerating while mutating

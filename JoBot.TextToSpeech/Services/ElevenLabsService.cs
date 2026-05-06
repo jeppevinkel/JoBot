@@ -46,7 +46,7 @@ public class ElevenLabsService : ITtsService
 
         return _voice;
     }
-    
+
     private static string BuildTrackTitle(string spokenText, int maxLength = 80)
     {
         const string ellipsis = "…";

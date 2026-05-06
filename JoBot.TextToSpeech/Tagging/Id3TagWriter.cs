@@ -9,7 +9,7 @@ namespace JoBot.TextToSpeech.Tagging;
 public static class Id3TagWriter
 {
     private static readonly byte[] Utf16Bom = [0xFF, 0xFE];
-    
+
     /// <summary>
     /// Returns a new byte array with an ID3v2.3 tag containing a TIT2 (title)
     /// frame prepended to <paramref name="mp3Data"/>.
@@ -32,7 +32,7 @@ public static class Id3TagWriter
 
         return ms.ToArray();
     }
-    
+
     /// Builds a raw TIT2 (title) frame using UTF-16 with BOM text encoding.
     private static byte[] BuildTit2Frame(string title)
     {
@@ -56,7 +56,7 @@ public static class Id3TagWriter
 
         return ms.ToArray();
     }
-    
+
     /// <summary>
     /// Writes a 28-bit value as a 4-byte synchsafe integer.
     /// Each byte only uses its lower 7 bits; the MSB is always 0.
@@ -66,15 +66,15 @@ public static class Id3TagWriter
     {
         stream.WriteByte((byte)((value >> 21) & 0x7F));
         stream.WriteByte((byte)((value >> 14) & 0x7F));
-        stream.WriteByte((byte)((value >> 7)  & 0x7F));
-        stream.WriteByte((byte)( value        & 0x7F));
+        stream.WriteByte((byte)((value >> 7) & 0x7F));
+        stream.WriteByte((byte)(value & 0x7F));
     }
 
     private static void WriteInt32BigEndian(Stream stream, int value)
     {
         stream.WriteByte((byte)((value >> 24) & 0xFF));
         stream.WriteByte((byte)((value >> 16) & 0xFF));
-        stream.WriteByte((byte)((value >> 8)  & 0xFF));
-        stream.WriteByte((byte)( value        & 0xFF));
+        stream.WriteByte((byte)((value >> 8) & 0xFF));
+        stream.WriteByte((byte)(value & 0xFF));
     }
 }

@@ -18,8 +18,8 @@ public static class TextToSpeechExtensions
         ConfigurationValidator.Validate(
             ("ElevenLabs:ApiKey", apiKey)
         );
-        
-        
+
+
         services.AddOptions<ElevenLabsOptions>()
             .Bind(config.GetSection(ElevenLabsOptions.SectionName));
 

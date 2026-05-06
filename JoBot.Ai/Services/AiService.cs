@@ -26,7 +26,7 @@ public class AiService : IAiService
 
     private readonly ConcurrentDictionary<ulong, GuildConversationHistory> _guildData = new();
     private readonly ToolFactory _toolFactory;
-    
+
     private readonly IConversationRepository _conversationRepository;
     private readonly IGuildSettingsService _settingsService;
 

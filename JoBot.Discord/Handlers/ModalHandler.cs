@@ -44,9 +44,9 @@ public class ModalHandler : IEventHandler<ModalSubmittedEventArgs>
         {
             throw new InvalidOperationException("Guild ID is null");
         }
-        
+
         _logger.LogInformation("Setting system prompt to:\n{Prompt}", textInput.Value);
-        
+
         await _guildSettingsService.UpdateSettingsAsync(
             guildId,
             new GuildSettingsUpdate { SystemPrompt = textInput.Value });
