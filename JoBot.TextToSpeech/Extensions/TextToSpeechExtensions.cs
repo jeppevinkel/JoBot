@@ -19,9 +19,10 @@ public static class TextToSpeechExtensions
             ("ElevenLabs:ApiKey", apiKey)
         );
 
-
         services.AddOptions<ElevenLabsOptions>()
             .Bind(config.GetSection(ElevenLabsOptions.SectionName));
+        services.AddOptions<TextToSpeechOptions>()
+            .Bind(config.GetSection(TextToSpeechOptions.SectionName));
 
         services.AddSingleton<ElevenLabsClient>(_ => new ElevenLabsClient(apiKey));
         services.AddSingleton<TtsAudioStore>();
