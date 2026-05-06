@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using JoBot.TextToSpeech.Models;
+using JoBot.TextToSpeech.Tagging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -21,11 +22,16 @@ public class TtsAudioStore : ITtsAudioStore, IHostedService
         _logger = logger;
     }
 
-    public string Add(byte[] audio)
+    public string Add(byte[] audio, string? title = null)
     {
         var id = Guid.NewGuid().ToString("N");
-        _cache[id] = new TtsAudioEntry(audio);
-        _logger.LogDebug("Added TTS audio entry {Id}", id);
+        
+        var data = title is { Length: > 0 }
+            ? Id3TagWriter.PrependTitle(audio, title)
+            : audio;
+        
+        _cache[id] = new TtsAudioEntry(data);
+        _logger.LogDebug("Added TTS audio entry {Id} (title: {Title})", id, title ?? "<none>");
         return id;
     }
 

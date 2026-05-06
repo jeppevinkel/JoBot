@@ -35,7 +35,7 @@ public class ElevenLabsService : ITtsService
         var request = new TextToSpeechRequest(voice, text, outputFormat: OutputFormat.MP3_44100_128);
         VoiceClip response = await _client.TextToSpeechEndpoint.TextToSpeechAsync(request, cancellationToken: cancellationToken);
         var audio = response.ClipData.ToArray();
-        var id = _store.Add(audio);
+        var id = _store.Add(audio, BuildTrackTitle(text));
         return $"{hostName}:{port}/tts/{id}";
     }
 
@@ -45,5 +45,15 @@ public class ElevenLabsService : ITtsService
         _voice ??= await _client.VoicesEndpoint.GetVoiceAsync(voiceId);
 
         return _voice;
+    }
+    
+    private static string BuildTrackTitle(string spokenText, int maxLength = 80)
+    {
+        const string ellipsis = "…";
+
+        if (spokenText.Length <= maxLength)
+            return $"TTS: {spokenText}";
+
+        return $"TTS: {spokenText[..(maxLength - ellipsis.Length)]}{ellipsis}";
     }
 }
