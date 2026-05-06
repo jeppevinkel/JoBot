@@ -65,7 +65,6 @@ public class TtsAudioServer : IHostedService
             context.Response.ContentType = "audio/mpeg";
             context.Response.ContentLength64 = audio.Length;
             await context.Response.OutputStream.WriteAsync(audio);
-            // _store.Remove(id); // clean up after serving
         }
         else
         {

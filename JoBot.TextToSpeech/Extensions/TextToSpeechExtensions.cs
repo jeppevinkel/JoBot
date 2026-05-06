@@ -24,9 +24,10 @@ public static class TextToSpeechExtensions
             .Bind(config.GetSection(ElevenLabsOptions.SectionName));
 
         services.AddSingleton<ElevenLabsClient>(_ => new ElevenLabsClient(apiKey));
-        services.AddSingleton<ITtsAudioStore, TtsAudioStore>();
-        services.AddSingleton<TtsAudioServer>();
-        services.AddHostedService(p => p.GetRequiredService<TtsAudioServer>());
+        services.AddSingleton<TtsAudioStore>();
+        services.AddSingleton<ITtsAudioStore>(sp => sp.GetRequiredService<TtsAudioStore>());
+        services.AddHostedService(sp => sp.GetRequiredService<TtsAudioStore>());
+        services.AddHostedService<TtsAudioServer>();
         services.AddSingleton<ITtsService, ElevenLabsService>();
         services.AddSingleton<IToolProvider, TextToSpeechTools>();
 
