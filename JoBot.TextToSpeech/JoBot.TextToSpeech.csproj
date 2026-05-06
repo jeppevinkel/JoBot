@@ -9,6 +9,7 @@
     <ItemGroup>
       <PackageReference Include="ElevenLabs-DotNet" Version="3.7.2" />
       <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
+      <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.7" />
     </ItemGroup>
 
     <ItemGroup>

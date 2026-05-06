@@ -12,10 +12,10 @@ public static class AiServiceExtensions
 {
     public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
     {
-        var token = config["Anthropic:Token"];
+        var token = config["Anthropic:ApiKey"];
 
         ConfigurationValidator.Validate(
-            ("Anthropic:Token", token)
+            ("Anthropic:ApiKey", token)
         );
 
         services.AddOptions<AiOptions>()

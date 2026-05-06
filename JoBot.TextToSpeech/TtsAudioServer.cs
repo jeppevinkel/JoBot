@@ -1,6 +1,8 @@
 ﻿using System.Net;
+using JoBot.TextToSpeech.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace JoBot.TextToSpeech;
 
@@ -10,22 +12,22 @@ public class TtsAudioServer : IHostedService
     private readonly ILogger<TtsAudioServer> _logger;
     private readonly HttpListener _listener;
     private CancellationTokenSource? _cts;
+    private readonly TextToSpeechOptions _textToSpeechOptions;
 
-    public int Port { get; } = 5756;
-
-    public TtsAudioServer(ITtsAudioStore store, ILogger<TtsAudioServer> logger)
+    public TtsAudioServer(ITtsAudioStore store, ILogger<TtsAudioServer> logger, IOptions<TextToSpeechOptions> textToSpeechOptions)
     {
         _store = store;
         _logger = logger;
         _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://*:{Port}/tts/");
+        _textToSpeechOptions = textToSpeechOptions.Value;
+        _listener.Prefixes.Add($"http://*:{_textToSpeechOptions.Port}/tts/");
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _listener.Start();
-        _logger.LogInformation("TTS audio server listening on port {Port}", Port);
+        _logger.LogInformation("TTS audio server listening on port {Port}", _textToSpeechOptions.Port);
 
         Task.Run(() => ListenAsync(_cts.Token), _cts.Token);
         return Task.CompletedTask;

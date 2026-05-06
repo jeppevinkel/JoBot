@@ -15,22 +15,27 @@ public class LavalinkVoiceService : IVoiceService
 {
     private readonly ILogger<LavalinkVoiceService> _logger;
     private readonly IAudioService _audioService;
+    private readonly IGuildSettingsService _settingsService;
 
     public LavalinkVoiceService(
         ILogger<LavalinkVoiceService> logger,
-        IAudioService audioService)
+        IAudioService audioService,
+        IGuildSettingsService settingsService)
     {
         _logger = logger;
         _audioService = audioService;
+        _settingsService = settingsService;
     }
 
     public async Task<bool> JoinVoiceChannelAsync(ulong guildId, ulong channelId)
     {
         try
         {
+            GuildSettings guildSettings = await _settingsService.GetSettingsAsync(guildId);
+
             var options = new QueuedLavalinkPlayerOptions
             {
-                InitialVolume = 0.5f
+                InitialVolume = guildSettings.MusicVolume
             };
 
             await _audioService.Players.JoinAsync<TtsQueuedPlayer, QueuedLavalinkPlayerOptions>(

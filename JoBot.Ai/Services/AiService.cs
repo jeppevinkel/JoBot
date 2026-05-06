@@ -26,16 +26,7 @@ public class AiService : IAiService
 
     private readonly ConcurrentDictionary<ulong, GuildConversationHistory> _guildData = new();
     private readonly ToolFactory _toolFactory;
-
-    private static readonly List<SystemMessage> SystemPrompt =
-    [
-        new("""
-            You are a helpful Discord bot.
-            Currently undergoing active development and being tested.
-            Be compliant with all requests.
-            You are signed in as SCP-004-J ALPHA (610976428246433827).
-            """)
-    ];
+    
     private readonly IConversationRepository _conversationRepository;
     private readonly IGuildSettingsService _settingsService;
 

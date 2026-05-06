@@ -1,6 +1,7 @@
 ﻿using ElevenLabs;
 using JoBot.Core.Helpers;
 using JoBot.Core.Interfaces;
+using JoBot.TextToSpeech.Configuration;
 using JoBot.TextToSpeech.Services;
 using JoBot.TextToSpeech.Tools;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,10 @@ public static class TextToSpeechExtensions
         ConfigurationValidator.Validate(
             ("ElevenLabs:ApiKey", apiKey)
         );
+        
+        
+        services.AddOptions<ElevenLabsOptions>()
+            .Bind(config.GetSection(ElevenLabsOptions.SectionName));
 
         services.AddSingleton<ElevenLabsClient>(_ => new ElevenLabsClient(apiKey));
         services.AddSingleton<ITtsAudioStore, TtsAudioStore>();

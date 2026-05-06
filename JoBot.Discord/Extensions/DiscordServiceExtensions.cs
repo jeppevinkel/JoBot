@@ -22,12 +22,13 @@ public static class DiscordServiceExtensions
     public static IServiceCollection AddDiscordServices(this IServiceCollection services, IConfiguration config)
     {
         var token = config["Discord:Token"];
-
         var debugGuildId = ulong.Parse(config["Discord:DebugGuildId"] ?? "0");
+        var lavalinkBaseAddress = config["Lavalink:BaseAddress"] ?? "http://localhost:2333";
+        var lavalinkPassphrase = config["Lavalink:Passphrase"];
 
-        JoBot.Core.Helpers.ConfigurationValidator.Validate(
+        Core.Helpers.ConfigurationValidator.Validate(
             ("Discord:Token", token),
-            ("Discord:DebugGuildId", debugGuildId.ToString())
+            ("Lavalink:Passphrase", lavalinkPassphrase)
         );
 
         services.AddHostedService<DiscordBotService>();
@@ -52,9 +53,8 @@ public static class DiscordServiceExtensions
         services.AddLavalink();
         services.ConfigureLavalink(c =>
         {
-            c.BaseAddress = new Uri(config["Lavalink:BaseAddress"] ?? "http://localhost:2333");
-            c.Passphrase = config["Lavalink:Passphrase"]
-                           ?? throw new InvalidOperationException("Lavalink:Passphrase is not configured.");
+            c.BaseAddress = new Uri(lavalinkBaseAddress);
+            c.Passphrase = lavalinkPassphrase!;
         });
 
         // services.AddVoiceExtension();

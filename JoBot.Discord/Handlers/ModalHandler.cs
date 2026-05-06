@@ -1,6 +1,8 @@
 ﻿using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.EventArgs;
+using JoBot.Core.Interfaces;
+using JoBot.Core.Models;
 using Microsoft.Extensions.Logging;
 
 namespace JoBot.Discord.Handlers;
@@ -8,10 +10,12 @@ namespace JoBot.Discord.Handlers;
 public class ModalHandler : IEventHandler<ModalSubmittedEventArgs>
 {
     private readonly ILogger<ModalHandler> _logger;
+    private readonly IGuildSettingsService _guildSettingsService;
 
-    public ModalHandler(ILogger<ModalHandler> logger)
+    public ModalHandler(ILogger<ModalHandler> logger, IGuildSettingsService settingsService)
     {
         _logger = logger;
+        _guildSettingsService = settingsService;
     }
 
     public async Task HandleEventAsync(DiscordClient client, ModalSubmittedEventArgs eventArgs)
@@ -31,14 +35,21 @@ public class ModalHandler : IEventHandler<ModalSubmittedEventArgs>
     {
         IModalSubmission prompt = eventArgs.Values["system_prompt"];
 
-        if (prompt is TextInputModalSubmission textInput)
+        if (prompt is not TextInputModalSubmission textInput)
         {
-            _logger.LogInformation("Setting system prompt to:\n{Prompt}", textInput.Value);
+            throw new InvalidOperationException("Invalid modal submission");
         }
 
-        // await _settingsService.UpdateSettingsAsync(
-        //     eventArgs.Guild!.Id,
-        //     new GuildSettingsUpdate { SystemPrompt = prompt });
+        if (eventArgs.Interaction.GuildId is not { } guildId)
+        {
+            throw new InvalidOperationException("Guild ID is null");
+        }
+        
+        _logger.LogInformation("Setting system prompt to:\n{Prompt}", textInput.Value);
+        
+        await _guildSettingsService.UpdateSettingsAsync(
+            guildId,
+            new GuildSettingsUpdate { SystemPrompt = textInput.Value });
 
         await eventArgs.Interaction.CreateResponseAsync(
             DiscordInteractionResponseType.ChannelMessageWithSource,
