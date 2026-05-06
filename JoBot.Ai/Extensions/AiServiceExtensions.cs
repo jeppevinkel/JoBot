@@ -12,16 +12,16 @@ public static class AiServiceExtensions
 {
     public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
     {
-        var token = config["Anthropic:ApiKey"];
+        var apiKey = config["Anthropic:ApiKey"];
 
         ConfigurationValidator.Validate(
-            ("Anthropic:ApiKey", token)
+            ("Anthropic:ApiKey", apiKey)
         );
 
         services.AddOptions<AiOptions>()
             .Bind(config.GetSection(AiOptions.SectionName));
 
-        services.AddSingleton<AnthropicClient>(_ => new AnthropicClient(token));
+        services.AddSingleton<AnthropicClient>(_ => new AnthropicClient(apiKey));
         services.AddSingleton<IAiService, AiService>();
         return services;
     }
