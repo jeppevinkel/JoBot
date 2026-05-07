@@ -62,7 +62,7 @@ public class SettingsCommands
         public async ValueTask SetPromptAsync(SlashCommandContext ctx)
         {
             GuildSettings settings = await _settingsService.GetSettingsAsync(ctx.Guild!.Id);
-            
+
             DiscordModalBuilder modal = new DiscordModalBuilder()
                 .WithTitle("Set System Prompt")
                 .WithCustomId("settings:set_prompt")

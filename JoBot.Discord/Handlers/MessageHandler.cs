@@ -61,7 +61,7 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
                         if (string.IsNullOrEmpty(chunk)) continue;
                         await eventArgs.Channel.SendMessageAsync(chunk);
                     }
-                        
+
                     break;
                 case IgnoreAction:
                     _logger.LogDebug("AI chose to ignore message {MessageId}", payload.Message.Id);
