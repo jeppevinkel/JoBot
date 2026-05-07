@@ -7,10 +7,13 @@ namespace JoBot.Discord.Lavalink.Players;
 
 public class TtsQueuedPlayer : QueuedLavalinkPlayer
 {
+    private const float TtsVolumeBoost = 2.0f;
+
     private ITrackQueueItem? _interruptedItem;
     private TimeSpan? _interruptedPosition;
     private bool _playingTts;
     private string? _pendingTtsTrackId;
+    private float _preInterruptVolume;
 
     public TtsQueuedPlayer(
         IPlayerProperties<TtsQueuedPlayer, QueuedLavalinkPlayerOptions> properties)
@@ -34,20 +37,21 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
         TrackEndReason endReason,
         CancellationToken cancellationToken = default)
     {
-        if (_playingTts && _interruptedItem is not null)
+        if (_playingTts)
         {
             _playingTts = false;
+            await SetVolumeAsync(_preInterruptVolume, cancellationToken);
 
-            // Re-insert the interrupted track at the front
-            // so the base queue logic picks it up next
-            await Queue.InsertAsync(0, _interruptedItem, cancellationToken);
-            _interruptedItem = null;
-            await base.NotifyTrackEndedAsync(queueItem, endReason, cancellationToken);
+            if (_interruptedItem is not null)
+            {
+                // Re-insert the interrupted track at the front
+                // so the base queue logic picks it up next
+                await Queue.InsertAsync(0, _interruptedItem, cancellationToken);
+                _interruptedItem = null;
+            }
         }
-        else
-        {
-            await base.NotifyTrackEndedAsync(queueItem, endReason, cancellationToken);
-        }
+
+        await base.NotifyTrackEndedAsync(queueItem, endReason, cancellationToken);
     }
 
     protected override async ValueTask NotifyTrackStartedAsync(ITrackQueueItem track, CancellationToken cancellationToken = new CancellationToken())
@@ -57,6 +61,8 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
         {
             _playingTts = true;
             _pendingTtsTrackId = null;
+            _preInterruptVolume = Volume;
+            await SetVolumeAsync(Math.Min(1.0f, Volume * TtsVolumeBoost), cancellationToken);
         }
         else if (_interruptedPosition.HasValue)
         {
