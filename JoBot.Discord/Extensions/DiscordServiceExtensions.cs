@@ -4,6 +4,7 @@ using DSharpPlus.Commands.Processors.SlashCommands;
 using DSharpPlus.Commands.Processors.SlashCommands.InteractionNamingPolicies;
 using DSharpPlus.Commands.Processors.TextCommands;
 using DSharpPlus.Extensions;
+using DSharpPlus.Voice;
 using JoBot.Core.Interfaces;
 using JoBot.Discord.Builders;
 using JoBot.Discord.Commands;
@@ -50,14 +51,14 @@ public static class DiscordServiceExtensions
             RegisterDefaultCommandProcessors = false
         });
 
-        services.AddLavalink();
-        services.ConfigureLavalink(c =>
-        {
-            c.BaseAddress = new Uri(lavalinkBaseAddress);
-            c.Passphrase = lavalinkPassphrase!;
-        });
+        // services.AddLavalink();
+        // services.ConfigureLavalink(c =>
+        // {
+        //     c.BaseAddress = new Uri(lavalinkBaseAddress);
+        //     c.Passphrase = lavalinkPassphrase!;
+        // });
 
-        // services.AddVoiceExtension();
+        services.AddVoiceExtension();
         services.ConfigureEventHandlers(b =>
         {
             b.AddEventHandlers<ReadyHandler>();
@@ -66,8 +67,8 @@ public static class DiscordServiceExtensions
         });
         services.AddSingleton<IDisplayNameResolver, DisplayNameResolver>();
         services.AddSingleton<IMessagePayloadBuilder, MessagePayloadBuilder>();
-        // services.AddSingleton<IVoiceService, DiscordVoiceService>();
-        services.AddSingleton<IVoiceService, LavalinkVoiceService>();
+        services.AddSingleton<IVoiceService, DiscordVoiceService>();
+        // services.AddSingleton<IVoiceService, LavalinkVoiceService>();
 
         // Tools
         services.AddSingleton<IToolProvider, VoiceTools>();
