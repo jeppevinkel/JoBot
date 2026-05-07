@@ -9,10 +9,11 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
 {
     private const float TtsVolumeBoost = 2.0f;
 
+    private readonly Queue<LavalinkTrack> _ttsQueue = new();
+    private readonly HashSet<string> _ttsTrackIds = new();
     private ITrackQueueItem? _interruptedItem;
     private TimeSpan? _interruptedPosition;
     private bool _playingTts;
-    private string? _pendingTtsTrackId;
     private float _preInterruptVolume;
 
     public TtsQueuedPlayer(
@@ -25,9 +26,16 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
         LavalinkTrack ttsTrack,
         CancellationToken cancellationToken = default)
     {
+        _ttsTrackIds.Add(ttsTrack.Identifier);
+
+        if (_playingTts)
+        {
+            _ttsQueue.Enqueue(ttsTrack);
+            return;
+        }
+
         _interruptedItem = CurrentItem;
-        _interruptedPosition = Position?.Position ?? null;
-        _pendingTtsTrackId = ttsTrack.Identifier;
+        _interruptedPosition = Position?.Position;
 
         await PlayAsync(ttsTrack, enqueue: false, cancellationToken: cancellationToken);
     }
@@ -39,30 +47,40 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
     {
         if (_playingTts)
         {
-            _playingTts = false;
-            await SetVolumeAsync(_preInterruptVolume, cancellationToken);
-
-            if (_interruptedItem is not null)
+            if (_ttsQueue.TryDequeue(out var nextTts))
             {
-                // Re-insert the interrupted track at the front
-                // so the base queue logic picks it up next
-                await Queue.InsertAsync(0, _interruptedItem, cancellationToken);
-                _interruptedItem = null;
+                // Insert the next TTS at the front so base plays it next
+                await Queue.InsertAsync(0, new TrackQueueItem(nextTts), cancellationToken);
+            }
+            else
+            {
+                // All TTS done — restore volume and re-queue interrupted music
+                _playingTts = false;
+                await SetVolumeAsync(_preInterruptVolume, cancellationToken);
+
+                if (_interruptedItem is not null)
+                {
+                    await Queue.InsertAsync(0, _interruptedItem, cancellationToken);
+                    _interruptedItem = null;
+                }
             }
         }
 
         await base.NotifyTrackEndedAsync(queueItem, endReason, cancellationToken);
     }
 
-    protected override async ValueTask NotifyTrackStartedAsync(ITrackQueueItem track, CancellationToken cancellationToken = new CancellationToken())
+    protected override async ValueTask NotifyTrackStartedAsync(ITrackQueueItem track, CancellationToken cancellationToken = default)
     {
         await base.NotifyTrackStartedAsync(track, cancellationToken);
-        if (track.Track?.Identifier == _pendingTtsTrackId)
+
+        if (track.Track is not null && _ttsTrackIds.Remove(track.Track.Identifier))
         {
-            _playingTts = true;
-            _pendingTtsTrackId = null;
-            _preInterruptVolume = Volume;
-            await SetVolumeAsync(Math.Min(1.0f, Volume * TtsVolumeBoost), cancellationToken);
+            if (!_playingTts)
+            {
+                _playingTts = true;
+                _preInterruptVolume = Volume;
+                await SetVolumeAsync(Math.Min(1.0f, Volume * TtsVolumeBoost), cancellationToken);
+            }
         }
         else if (_interruptedPosition.HasValue)
         {
