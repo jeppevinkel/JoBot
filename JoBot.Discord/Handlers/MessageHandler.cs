@@ -48,6 +48,7 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
                     var replyChunks = MessageChunker.Split(reply.Content).ToList();
                     for (var i = 0; i < replyChunks.Count; i++)
                     {
+                        if (string.IsNullOrEmpty(replyChunks[i])) continue;
                         if (i == 0)
                             await eventArgs.Message.RespondAsync(replyChunks[i]);
                         else
@@ -56,7 +57,11 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
                     break;
                 case RespondAction response:
                     foreach (var chunk in MessageChunker.Split(response.Content))
+                    {
+                        if (string.IsNullOrEmpty(chunk)) continue;
                         await eventArgs.Channel.SendMessageAsync(chunk);
+                    }
+                        
                     break;
                 case IgnoreAction:
                     _logger.LogDebug("AI chose to ignore message {MessageId}", payload.Message.Id);
