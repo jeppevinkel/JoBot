@@ -61,16 +61,15 @@ public class SettingsCommands
         [RequirePermissions([], [DiscordPermission.ManageGuild, DiscordPermission.ManageChannels, DiscordPermission.ManageMessages])]
         public async ValueTask SetPromptAsync(SlashCommandContext ctx)
         {
+            GuildSettings settings = await _settingsService.GetSettingsAsync(ctx.Guild!.Id);
+            
             DiscordModalBuilder modal = new DiscordModalBuilder()
                 .WithTitle("Set System Prompt")
                 .WithCustomId("settings:set_prompt")
                 .AddTextInput(new DiscordTextInputComponent(
                         "system_prompt",
                         "You are a helpful Discord bot...",
-                        """
-                        Default system prompt.
-                        This is just an exampe and not actually used!
-                        """,
+                        settings.SystemPrompt,
                         true,
                         DiscordTextInputStyle.Paragraph,
                         0,
