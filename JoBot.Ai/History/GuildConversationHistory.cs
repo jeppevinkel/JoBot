@@ -23,6 +23,7 @@ public class GuildConversationHistory
 
     public SemaphoreSlim Lock { get; } = new(1, 1);
     public IReadOnlyList<Message> Messages => _messages;
+    public bool IsFirstAfterReboot { get; private set; } = true;
 
     public GuildConversationHistory(
         ulong guildId,
@@ -52,6 +53,7 @@ public class GuildConversationHistory
 
     public async Task AddAsync(Message message)
     {
+        IsFirstAfterReboot = false;
         _messages.Add(message);
 
         GuildSettings settings = await _settingsService.GetSettingsAsync(_guildId);

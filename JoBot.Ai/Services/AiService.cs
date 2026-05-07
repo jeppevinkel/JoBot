@@ -63,6 +63,9 @@ public class AiService : IAiService
 
             GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
 
+            if (history.IsFirstAfterReboot)
+                payload = payload with { IsFirstAfterReboot = true };
+
             await history.AddAsync(new Message(RoleType.User,
                 JsonSerializer.Serialize(payload, JsonOptions)));
 

@@ -18,4 +18,8 @@ public record MessagePayload
 
     [JsonPropertyName("mentioned_users")]
     public IReadOnlyList<UserInfo> MentionedUsers { get; init; } = [];
+
+    [JsonPropertyName("is_first_after_reboot")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsFirstAfterReboot { get; init; }
 }
