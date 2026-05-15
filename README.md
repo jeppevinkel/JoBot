@@ -1,5 +1,7 @@
 # JoBot
 
+Detailed docs: [https://docs.jobot.jeppdev.com/](https://docs.jobot.jeppdev.com/)
+
 A Discord bot built on .NET 10 with Claude AI integration, music streaming, and SQLite persistence.
 
 ## Project Structure
