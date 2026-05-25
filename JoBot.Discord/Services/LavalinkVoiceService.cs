@@ -1,4 +1,5 @@
-﻿using JoBot.Core.Interfaces;
+﻿using System.Text.Json;
+using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
 using JoBot.Discord.Lavalink.Players;
 using Lavalink4NET;
@@ -13,6 +14,8 @@ namespace JoBot.Discord.Services;
 
 public class LavalinkVoiceService : IVoiceService
 {
+    private const string AlbumMetadataKey = "jobot.album";
+
     private readonly ILogger<LavalinkVoiceService> _logger;
     private readonly IAudioService _audioService;
     private readonly IGuildSettingsService _settingsService;
@@ -137,7 +140,7 @@ public class LavalinkVoiceService : IVoiceService
         }
     }
 
-    public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl)
+    public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null)
     {
         try
         {
@@ -146,6 +149,8 @@ public class LavalinkVoiceService : IVoiceService
 
             var track = await _audioService.Tracks.LoadTrackAsync(streamUrl, TrackSearchMode.None);
             if (track is null) return false;
+
+            track = ApplyMetadata(track, title, artist, album);
 
             // If nothing is playing, start immediately
             // Otherwise add to queue
@@ -186,16 +191,52 @@ public class LavalinkVoiceService : IVoiceService
                 {
                     Title = current.Title,
                     Artist = current.Author,
-                    Duration = current.Duration
+                    Duration = current.Duration,
+                    Album = GetAlbum(current)
                 },
             QueuedTracks = queue.Select(item => new TrackInfo
             {
                 Title = item.Track?.Title ?? "Unknown",
                 Artist = item.Track?.Author ?? "Unknown",
-                Duration = item.Track?.Duration ?? TimeSpan.Zero
+                Duration = item.Track?.Duration ?? TimeSpan.Zero,
+                Album = item.Track is null ? null : GetAlbum(item.Track)
             }).ToList()
         };
     }
+
+    private static LavalinkTrack ApplyMetadata(LavalinkTrack track, string? title, string? artist, string? album)
+    {
+        var hasTitle = !string.IsNullOrWhiteSpace(title);
+        var hasArtist = !string.IsNullOrWhiteSpace(artist);
+        var hasAlbum = !string.IsNullOrWhiteSpace(album);
+        if (!hasTitle && !hasArtist && !hasAlbum) return track;
+
+        var additionalInfo = track.AdditionalInformation;
+        if (hasAlbum)
+            additionalInfo = additionalInfo.SetItem(AlbumMetadataKey, JsonSerializer.SerializeToElement(album));
+
+        return new LavalinkTrack
+        {
+            Title = hasTitle ? title! : track.Title,
+            Author = hasArtist ? artist! : track.Author,
+            Identifier = track.Identifier,
+            Duration = track.Duration,
+            IsSeekable = track.IsSeekable,
+            IsLiveStream = track.IsLiveStream,
+            Uri = track.Uri,
+            ArtworkUri = track.ArtworkUri,
+            Isrc = track.Isrc,
+            SourceName = track.SourceName,
+            ProbeInfo = track.ProbeInfo,
+            StartPosition = track.StartPosition,
+            AdditionalInformation = additionalInfo
+        };
+    }
+
+    private static string? GetAlbum(LavalinkTrack track) =>
+        track.AdditionalInformation.TryGetValue(AlbumMetadataKey, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     public async Task StopAsync(ulong guildId)
     {

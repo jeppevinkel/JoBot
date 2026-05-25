@@ -13,5 +13,5 @@ public interface IVoiceService
     Task<bool> IsPlayingAsync(ulong guildId);
     Task<QueueInfo?> GetQueueAsync(ulong guildId);
     Task SkipAsync(ulong guildId);
-    Task<bool> EnqueueAsync(ulong guildId, string streamUrl);
+    Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null);
 }

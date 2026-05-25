@@ -90,9 +90,12 @@ public class VoiceTools : IToolProvider
     [AiTool("Add a song to the queue")]
     public async Task<string> EnqueueAsync(
         [AiParameter("Guild ID")] ulong guildId,
-        [AiParameter("Stream URL of the track")] string streamUrl)
+        [AiParameter("Stream URL of the track")] string streamUrl,
+        [AiParameter("Track title to display in the queue", Required = false)] string? title = null,
+        [AiParameter("Track artist to display in the queue", Required = false)] string? artist = null,
+        [AiParameter("Track album to display in the queue", Required = false)] string? album = null)
     {
-        var success = await _voiceService.EnqueueAsync(guildId, streamUrl);
+        var success = await _voiceService.EnqueueAsync(guildId, streamUrl, title, artist, album);
         return success
             ? ToolResult.Success("Track added to queue.")
             : ToolResult.Failure("Failed to add track to queue.");
