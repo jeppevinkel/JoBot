@@ -141,6 +141,10 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
         }
 
         await SkipAsync(cancellationToken: cancellationToken);
+
+        // Lavalink keeps the paused flag across tracks; skipping implies the user wants to hear the next one
+        if (IsPaused)
+            await ResumeAsync(cancellationToken);
     }
 
     public override async ValueTask StopAsync(CancellationToken cancellationToken = default)
@@ -154,6 +158,11 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
         _pauseAfterTts = false;
 
         await base.StopAsync(cancellationToken);
+
+        // Lavalink keeps the paused flag after stopping. Left paused, the player would report a Paused
+        // state with no track, so newly enqueued tracks would be queued but never started.
+        if (IsPaused && State is not PlayerState.Destroyed)
+            await ResumeAsync(cancellationToken);
     }
 
     protected override async ValueTask NotifyTrackEndedAsync(
