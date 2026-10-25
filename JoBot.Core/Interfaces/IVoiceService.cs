@@ -26,5 +26,7 @@ public interface IVoiceService
     Task<(PlaybackResult Result, TrackInfo? Track)> MoveQueueTrackAsync(ulong guildId, int fromIndex, int toIndex);
     /// <returns>The number of tracks removed, or null if not connected.</returns>
     Task<int?> ClearQueueAsync(ulong guildId);
+    /// <returns>The voice channels the bot can see, or null if the guild is unknown.</returns>
+    Task<IReadOnlyList<VoiceChannelInfo>?> GetVoiceChannelsAsync(ulong guildId);
     Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null);
 }

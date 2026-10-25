@@ -200,6 +200,16 @@ public class VoiceTools : IToolProvider
             : ToolResult.Success($"Removed {removed} track(s) from the queue.");
     }
 
+    [AiTool("List the voice channels in a guild, including how many users are in each and whether the bot can join. Use this to find a channel ID when the user names a channel instead of giving an ID")]
+    public async Task<string> GetVoiceChannelsAsync(
+        [AiParameter("Guild ID")] ulong guildId)
+    {
+        var channels = await _voiceService.GetVoiceChannelsAsync(guildId);
+        return channels is null
+            ? ToolResult.Failure("Guild not found.")
+            : ToolResult.Success(channels);
+    }
+
     private static string ToResultMessage(
         PlaybackResult result,
         string successMessage,

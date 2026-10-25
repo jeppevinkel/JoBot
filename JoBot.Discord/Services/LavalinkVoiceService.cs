@@ -1,4 +1,6 @@
 ﻿using System.Text.Json;
+using DSharpPlus;
+using DSharpPlus.Entities;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
 using JoBot.Discord.Lavalink.Players;
@@ -19,15 +21,18 @@ public class LavalinkVoiceService : IVoiceService
     private readonly ILogger<LavalinkVoiceService> _logger;
     private readonly IAudioService _audioService;
     private readonly IGuildSettingsService _settingsService;
+    private readonly DiscordClient _discordClient;
 
     public LavalinkVoiceService(
         ILogger<LavalinkVoiceService> logger,
         IAudioService audioService,
-        IGuildSettingsService settingsService)
+        IGuildSettingsService settingsService,
+        DiscordClient discordClient)
     {
         _logger = logger;
         _audioService = audioService;
         _settingsService = settingsService;
+        _discordClient = discordClient;
     }
 
     public async Task<bool> JoinVoiceChannelAsync(ulong guildId, ulong channelId)
@@ -316,6 +321,40 @@ public class LavalinkVoiceService : IVoiceService
             return null;
 
         return await player.Queue.ClearAsync();
+    }
+
+    public async Task<IReadOnlyList<VoiceChannelInfo>?> GetVoiceChannelsAsync(ulong guildId)
+    {
+        // Uses the gateway cache, so this doesn't make any API requests
+        if (!_discordClient.Guilds.TryGetValue(guildId, out DiscordGuild? guild))
+            return null;
+
+        DiscordMember? bot = guild.CurrentMember;
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+
+        var userCounts = guild.VoiceStates.Values
+            .Where(state => state.ChannelId is not null)
+            .GroupBy(state => state.ChannelId!.Value)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        return guild.Channels.Values
+            .Where(channel => channel.Type is DiscordChannelType.Voice or DiscordChannelType.Stage)
+            .Select(channel => (Channel: channel, Permissions: bot is null ? (DiscordPermissions?)null : channel.PermissionsFor(bot)))
+            // Don't reveal channels hidden from the bot
+            .Where(x => x.Permissions?.HasPermission(DiscordPermission.ViewChannel) ?? false)
+            .OrderBy(x => x.Channel.Parent?.Position ?? -1)
+            .ThenBy(x => x.Channel.Position)
+            .Select(x => new VoiceChannelInfo
+            {
+                Id = x.Channel.Id.ToString(),
+                Name = x.Channel.Name,
+                Category = x.Channel.Parent?.Name,
+                ConnectedUsers = userCounts.GetValueOrDefault(x.Channel.Id),
+                UserLimit = x.Channel.UserLimit is > 0 ? x.Channel.UserLimit : null,
+                CanJoin = x.Permissions!.Value.HasPermission(DiscordPermission.Connect),
+                IsBotConnected = player?.VoiceChannelId == x.Channel.Id
+            })
+            .ToList();
     }
 
     /// <summary>
