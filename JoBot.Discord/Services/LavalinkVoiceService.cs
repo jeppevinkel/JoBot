@@ -1,4 +1,6 @@
 ﻿using System.Text.Json;
+using DSharpPlus;
+using DSharpPlus.Entities;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
 using JoBot.Discord.Lavalink.Players;
@@ -19,15 +21,18 @@ public class LavalinkVoiceService : IVoiceService
     private readonly ILogger<LavalinkVoiceService> _logger;
     private readonly IAudioService _audioService;
     private readonly IGuildSettingsService _settingsService;
+    private readonly DiscordClient _discordClient;
 
     public LavalinkVoiceService(
         ILogger<LavalinkVoiceService> logger,
         IAudioService audioService,
-        IGuildSettingsService settingsService)
+        IGuildSettingsService settingsService,
+        DiscordClient discordClient)
     {
         _logger = logger;
         _audioService = audioService;
         _settingsService = settingsService;
+        _discordClient = discordClient;
     }
 
     public async Task<bool> JoinVoiceChannelAsync(ulong guildId, ulong channelId)
@@ -171,7 +176,213 @@ public class LavalinkVoiceService : IVoiceService
     {
         TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
         if (player is null) return;
-        await player.SkipAsync();
+        await player.SkipMusicAsync();
+    }
+
+    public async Task<NowPlayingInfo?> GetNowPlayingAsync(ulong guildId)
+    {
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+        if (player is null)
+            return null;
+
+        LavalinkTrack? track = player.CurrentMusicTrack;
+        TimeSpan? position = player.MusicPosition;
+
+        return new NowPlayingInfo
+        {
+            Track = track is null ? null : ToTrackInfo(track),
+            // Whole seconds are precise enough and keep the output readable
+            Position = track is null || position is null ? null : TimeSpan.FromSeconds(Math.Floor(position.Value.TotalSeconds)),
+            IsPaused = track is not null && player.IsMusicPaused,
+            IsPlayingTts = player.IsPlayingTts
+        };
+    }
+
+    public Task<PlaybackResult> PauseAsync(ulong guildId) =>
+        ExecuteOnMusicAsync(guildId, "pausing playback", async (player, _) =>
+        {
+            await player.PauseMusicAsync();
+            return PlaybackResult.Success;
+        });
+
+    public Task<PlaybackResult> ResumeAsync(ulong guildId) =>
+        ExecuteOnMusicAsync(guildId, "resuming playback", async (player, _) =>
+        {
+            await player.ResumeMusicAsync();
+            return PlaybackResult.Success;
+        });
+
+    public Task<PlaybackResult> SeekAsync(ulong guildId, TimeSpan position) =>
+        ExecuteOnMusicAsync(guildId, "seeking", async (player, track) =>
+        {
+            if (!track.IsSeekable || track.IsLiveStream)
+                return PlaybackResult.NotSeekable;
+
+            if (position < TimeSpan.Zero || position > track.Duration)
+                return PlaybackResult.InvalidArgument;
+
+            await player.SeekMusicAsync(position);
+            return PlaybackResult.Success;
+        });
+
+    public async Task<float?> GetVolumeAsync(ulong guildId)
+    {
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+        return player?.MusicVolume;
+    }
+
+    public async Task<PlaybackResult> SetVolumeAsync(ulong guildId, float volume)
+    {
+        if (float.IsNaN(volume) || volume is < 0f or > 1f)
+            return PlaybackResult.InvalidArgument;
+
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return PlaybackResult.NotConnected;
+
+            await player.SetMusicVolumeAsync(volume);
+            return PlaybackResult.Success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting volume for guild {GuildId}", guildId);
+            return PlaybackResult.Failed;
+        }
+    }
+
+    public async Task<(PlaybackResult Result, TrackInfo? Track)> RemoveFromQueueAsync(ulong guildId, int index)
+    {
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return (PlaybackResult.NotConnected, null);
+
+            ITrackQueue queue = player.Queue;
+            if (index < 0 || index >= queue.Count)
+                return (PlaybackResult.InvalidArgument, null);
+
+            // Remove by reference so a track advancing in the meantime can't shift us onto the wrong item
+            ITrackQueueItem item = queue[index];
+            if (!await queue.RemoveAsync(item))
+                return (PlaybackResult.InvalidArgument, null);
+
+            return (PlaybackResult.Success, ToQueueItemInfo(item));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing track from queue in guild {GuildId}", guildId);
+            return (PlaybackResult.Failed, null);
+        }
+    }
+
+    public async Task<(PlaybackResult Result, TrackInfo? Track)> MoveQueueTrackAsync(ulong guildId, int fromIndex, int toIndex)
+    {
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return (PlaybackResult.NotConnected, null);
+
+            ITrackQueue queue = player.Queue;
+            if (fromIndex < 0 || fromIndex >= queue.Count || toIndex < 0)
+                return (PlaybackResult.InvalidArgument, null);
+
+            ITrackQueueItem item = queue[fromIndex];
+            if (!await queue.RemoveAsync(item))
+                return (PlaybackResult.InvalidArgument, null);
+
+            try
+            {
+                await queue.InsertAsync(Math.Min(toIndex, queue.Count), item);
+            }
+            catch
+            {
+                // Don't lose the track if the insert fails
+                await queue.AddAsync(item);
+                throw;
+            }
+
+            return (PlaybackResult.Success, ToQueueItemInfo(item));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error moving track in queue in guild {GuildId}", guildId);
+            return (PlaybackResult.Failed, null);
+        }
+    }
+
+    public async Task<int?> ClearQueueAsync(ulong guildId)
+    {
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+        if (player is null)
+            return null;
+
+        return await player.Queue.ClearAsync();
+    }
+
+    public async Task<IReadOnlyList<VoiceChannelInfo>?> GetVoiceChannelsAsync(ulong guildId)
+    {
+        // Uses the gateway cache, so this doesn't make any API requests
+        if (!_discordClient.Guilds.TryGetValue(guildId, out DiscordGuild? guild))
+            return null;
+
+        DiscordMember? bot = guild.CurrentMember;
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+
+        var userCounts = guild.VoiceStates.Values
+            .Where(state => state.ChannelId is not null)
+            .GroupBy(state => state.ChannelId!.Value)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        return guild.Channels.Values
+            .Where(channel => channel.Type is DiscordChannelType.Voice or DiscordChannelType.Stage)
+            .Select(channel => (Channel: channel, Permissions: bot is null ? (DiscordPermissions?)null : channel.PermissionsFor(bot)))
+            // Don't reveal channels hidden from the bot
+            .Where(x => x.Permissions?.HasPermission(DiscordPermission.ViewChannel) ?? false)
+            .OrderBy(x => x.Channel.Parent?.Position ?? -1)
+            .ThenBy(x => x.Channel.Position)
+            .Select(x => new VoiceChannelInfo
+            {
+                Id = x.Channel.Id.ToString(),
+                Name = x.Channel.Name,
+                Category = x.Channel.Parent?.Name,
+                ConnectedUsers = userCounts.GetValueOrDefault(x.Channel.Id),
+                UserLimit = x.Channel.UserLimit is > 0 ? x.Channel.UserLimit : null,
+                CanJoin = x.Permissions!.Value.HasPermission(DiscordPermission.Connect),
+                IsBotConnected = player?.VoiceChannelId == x.Channel.Id
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> against the current music track, handling the not-connected,
+    /// nothing-playing and error cases.
+    /// </summary>
+    private async Task<PlaybackResult> ExecuteOnMusicAsync(
+        ulong guildId,
+        string description,
+        Func<TtsQueuedPlayer, LavalinkTrack, Task<PlaybackResult>> action)
+    {
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return PlaybackResult.NotConnected;
+
+            LavalinkTrack? track = player.CurrentMusicTrack;
+            if (track is null)
+                return PlaybackResult.NothingPlaying;
+
+            return await action(player, track);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error {Action} in guild {GuildId}", description, guildId);
+            return PlaybackResult.Failed;
+        }
     }
 
     public async Task<QueueInfo?> GetQueueAsync(ulong guildId)
@@ -180,22 +391,15 @@ public class LavalinkVoiceService : IVoiceService
         if (player is null)
             return null;
 
-        LavalinkTrack? current = player.CurrentTrack;
+        LavalinkTrack? current = player.CurrentMusicTrack;
         ITrackQueue queue = player.Queue;
 
         return new QueueInfo
         {
-            CurrentTrack = current is null
-                ? null
-                : new TrackInfo
-                {
-                    Title = current.Title,
-                    Artist = current.Author,
-                    Duration = current.Duration,
-                    Album = GetAlbum(current)
-                },
-            QueuedTracks = queue.Select(item => new TrackInfo
+            CurrentTrack = current is null ? null : ToTrackInfo(current),
+            QueuedTracks = queue.Select((item, index) => new QueuedTrackInfo
             {
+                Position = index + 1,
                 Title = item.Track?.Title ?? "Unknown",
                 Artist = item.Track?.Author ?? "Unknown",
                 Duration = item.Track?.Duration ?? TimeSpan.Zero,
@@ -203,6 +407,19 @@ public class LavalinkVoiceService : IVoiceService
             }).ToList()
         };
     }
+
+    private static TrackInfo ToTrackInfo(LavalinkTrack track) => new()
+    {
+        Title = track.Title,
+        Artist = track.Author,
+        Duration = track.Duration,
+        Album = GetAlbum(track)
+    };
+
+    private static TrackInfo ToQueueItemInfo(ITrackQueueItem item) =>
+        item.Track is null
+            ? new TrackInfo { Title = "Unknown", Artist = "Unknown", Duration = TimeSpan.Zero }
+            : ToTrackInfo(item.Track);
 
     private static LavalinkTrack ApplyMetadata(LavalinkTrack track, string? title, string? artist, string? album)
     {
