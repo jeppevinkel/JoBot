@@ -1,4 +1,5 @@
-﻿using Lavalink4NET.Players;
+﻿using Lavalink4NET.Extensions;
+using Lavalink4NET.Players;
 using Lavalink4NET.Players.Queued;
 using Lavalink4NET.Protocol.Payloads.Events;
 using Lavalink4NET.Tracks;
@@ -9,21 +10,37 @@ namespace JoBot.Discord.Lavalink.Players;
 /// A queued player that can temporarily interrupt music with TTS clips.
 /// </summary>
 /// <remarks>
-/// The <c>*Music*</c> members operate on the music the user is listening to. While a TTS clip is
-/// interrupting playback they act on the interrupted track instead of the TTS clip, and the change
-/// is applied when the music is restored.
+/// <para>
+/// A TTS session starts when the first clip is requested and ends when the last queued clip finishes,
+/// at which point the interrupted music is put back at the front of the queue. Clips requested during
+/// a session are queued rather than interrupting again, so back-to-back requests can't mistake a TTS
+/// clip for the music to restore.
+/// </para>
+/// <para>
+/// The <c>*Music*</c> members operate on the music the user is listening to. During a session they
+/// act on the interrupted track instead of the TTS clip, and the change is applied once it is restored.
+/// </para>
 /// </remarks>
 public class TtsQueuedPlayer : QueuedLavalinkPlayer
 {
     private const float TtsVolumeBoost = 2.0f;
 
+    // How long past a clip's expected end a session is considered stuck, e.g. because the node
+    // reconnected and the track end event was lost
+    private static readonly TimeSpan StaleSessionGrace = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan UnknownClipDuration = TimeSpan.FromMinutes(5);
+
+    // Guards the TTS state below. Never held across an await.
+    private readonly object _sync = new();
     private readonly Queue<LavalinkTrack> _ttsQueue = new();
     private readonly HashSet<string> _ttsTrackIds = new();
+    private bool _ttsActive;
+    private DateTimeOffset _ttsDeadline;
     private ITrackQueueItem? _interruptedItem;
     private TimeSpan? _interruptedPosition;
-    private bool _playingTts;
-    private float _preInterruptVolume;
     private bool _pauseAfterTts;
+    private float _preInterruptVolume;
+    private PendingRestore? _pendingRestore;
 
     public TtsQueuedPlayer(
         IPlayerProperties<TtsQueuedPlayer, QueuedLavalinkPlayerOptions> properties)
@@ -31,61 +48,114 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
     {
     }
 
-    public bool IsPlayingTts => _playingTts;
+    public bool IsPlayingTts => _ttsActive;
 
     /// <summary>The music track currently playing, ignoring any TTS clip that is interrupting it.</summary>
-    public LavalinkTrack? CurrentMusicTrack => _playingTts ? _interruptedItem?.Track : CurrentTrack;
+    public LavalinkTrack? CurrentMusicTrack
+    {
+        get
+        {
+            lock (_sync)
+                return _ttsActive ? _interruptedItem?.Track : CurrentTrack;
+        }
+    }
 
     /// <summary>The playback position of <see cref="CurrentMusicTrack"/>.</summary>
     public TimeSpan? MusicPosition
     {
         get
         {
-            if (_playingTts)
-                return _interruptedItem is null ? null : _interruptedPosition ?? TimeSpan.Zero;
+            lock (_sync)
+            {
+                if (_ttsActive)
+                    return _interruptedItem is null ? null : _interruptedPosition ?? TimeSpan.Zero;
+            }
 
-            if (CurrentTrack is null || Position is not { } position)
-                return null;
-
-            // The interpolated position keeps advancing while paused, so use the last synced value instead
-            TimeSpan value = IsPaused ? position.RelativePosition : position.Position;
-            return Clamp(value, TimeSpan.Zero, CurrentTrack.Duration);
+            return GetPlaybackPosition();
         }
     }
 
-    public bool IsMusicPaused => _playingTts ? _pauseAfterTts : IsPaused;
+    public bool IsMusicPaused
+    {
+        get
+        {
+            lock (_sync)
+                return _ttsActive ? _pauseAfterTts : IsPaused;
+        }
+    }
 
-    public float MusicVolume => _playingTts ? _preInterruptVolume : Volume;
+    public float MusicVolume
+    {
+        get
+        {
+            lock (_sync)
+                return _ttsActive ? _preInterruptVolume : Volume;
+        }
+    }
 
     public async Task PlayTtsAsync(
         LavalinkTrack ttsTrack,
         CancellationToken cancellationToken = default)
     {
-        _ttsTrackIds.Add(ttsTrack.Identifier);
+        float baseVolume;
 
-        if (_playingTts)
+        lock (_sync)
         {
-            _ttsQueue.Enqueue(ttsTrack);
-            return;
+            var staleSession = _ttsActive && DateTimeOffset.UtcNow > _ttsDeadline;
+            if (staleSession)
+            {
+                // The end of the last clip was never reported. Start over instead of queueing behind a clip
+                // that will never finish, keeping the music that was originally interrupted.
+                _ttsQueue.Clear();
+                _ttsTrackIds.Clear();
+                _ttsActive = false;
+            }
+
+            _ttsTrackIds.Add(ttsTrack.Identifier);
+
+            if (_ttsActive)
+            {
+                _ttsQueue.Enqueue(ttsTrack);
+                return;
+            }
+
+            _ttsActive = true;
+            _interruptedItem = staleSession ? _interruptedItem : CurrentItem;
+            _interruptedPosition = staleSession ? _interruptedPosition : _interruptedItem is null ? null : GetPlaybackPosition();
+            _pauseAfterTts = staleSession ? _pauseAfterTts : _interruptedItem is not null && IsPaused;
+            _preInterruptVolume = staleSession ? _preInterruptVolume : Volume;
+            baseVolume = _preInterruptVolume;
+            _ttsDeadline = GetClipDeadline(ttsTrack);
         }
 
-        _interruptedItem = CurrentItem;
-        _interruptedPosition = MusicPosition;
-        _pauseAfterTts = IsPaused;
-
-        await PlayAsync(ttsTrack, enqueue: false, cancellationToken: cancellationToken);
+        try
+        {
+            await PlayAsync(ttsTrack, enqueue: false, cancellationToken: cancellationToken);
+        }
+        catch
+        {
+            // The clip never started, so the music is still playing; don't leave a session open
+            lock (_sync)
+                ClearTtsSession();
+            throw;
+        }
 
         // Playing a new track does not unpause the player, so TTS would be silent without this
         if (IsPaused)
             await ResumeAsync(cancellationToken);
+
+        await SetVolumeAsync(BoostVolume(baseVolume), cancellationToken);
     }
 
     public async ValueTask PauseMusicAsync(CancellationToken cancellationToken = default)
     {
-        if (_playingTts)
+        lock (_sync)
         {
-            _pauseAfterTts = true;
-            return;
+            if (_ttsActive)
+            {
+                _pauseAfterTts = true;
+                return;
+            }
         }
 
         if (!IsPaused)
@@ -94,10 +164,13 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
 
     public async ValueTask ResumeMusicAsync(CancellationToken cancellationToken = default)
     {
-        if (_playingTts)
+        lock (_sync)
         {
-            _pauseAfterTts = false;
-            return;
+            if (_ttsActive)
+            {
+                _pauseAfterTts = false;
+                return;
+            }
         }
 
         if (IsPaused)
@@ -106,10 +179,13 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
 
     public async ValueTask SeekMusicAsync(TimeSpan position, CancellationToken cancellationToken = default)
     {
-        if (_playingTts)
+        lock (_sync)
         {
-            _interruptedPosition = position;
-            return;
+            if (_ttsActive)
+            {
+                _interruptedPosition = position;
+                return;
+            }
         }
 
         await SeekAsync(position, cancellationToken);
@@ -117,27 +193,34 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
 
     public async ValueTask SetMusicVolumeAsync(float volume, CancellationToken cancellationToken = default)
     {
-        if (_playingTts)
+        var playerVolume = volume;
+
+        lock (_sync)
         {
-            // Keep the TTS boost relative to the new volume; music is restored to the new volume afterwards
-            _preInterruptVolume = volume;
-            await SetVolumeAsync(Math.Min(1.0f, volume * TtsVolumeBoost), cancellationToken);
-            return;
+            if (_ttsActive)
+            {
+                // Keep the TTS boost relative to the new volume; music is restored to the new volume afterwards
+                _preInterruptVolume = volume;
+                playerVolume = BoostVolume(volume);
+            }
         }
 
-        await SetVolumeAsync(volume, cancellationToken);
+        await SetVolumeAsync(playerVolume, cancellationToken);
     }
 
     /// <summary>Skips the current music track. During TTS the interrupted track is dropped instead of skipping the TTS clip.</summary>
     public async ValueTask SkipMusicAsync(CancellationToken cancellationToken = default)
     {
-        if (_playingTts)
+        lock (_sync)
         {
-            // The next queued track starts once all TTS has finished
-            _interruptedItem = null;
-            _interruptedPosition = null;
-            _pauseAfterTts = false;
-            return;
+            if (_ttsActive)
+            {
+                // The next queued track starts once all TTS has finished
+                _interruptedItem = null;
+                _interruptedPosition = null;
+                _pauseAfterTts = false;
+                return;
+            }
         }
 
         await SkipAsync(cancellationToken: cancellationToken);
@@ -149,13 +232,20 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
 
     public override async ValueTask StopAsync(CancellationToken cancellationToken = default)
     {
-        // Drop pending TTS and the interrupted track so nothing is re-queued after stopping.
-        // _playingTts is left as-is so the track-ended handler still restores the volume.
-        _ttsQueue.Clear();
-        _ttsTrackIds.Clear();
-        _interruptedItem = null;
-        _interruptedPosition = null;
-        _pauseAfterTts = false;
+        bool wasActive;
+        float volume;
+
+        // End any TTS session up front so nothing is re-queued when the clip reports it was stopped
+        lock (_sync)
+        {
+            wasActive = _ttsActive;
+            volume = _preInterruptVolume;
+            ClearTtsSession();
+            _pendingRestore = null;
+        }
+
+        if (wasActive && State is not PlayerState.Destroyed)
+            await SetVolumeAsync(volume, cancellationToken);
 
         await base.StopAsync(cancellationToken);
 
@@ -170,30 +260,65 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
         TrackEndReason endReason,
         CancellationToken cancellationToken = default)
     {
-        if (_playingTts)
-        {
-            if (_ttsQueue.TryDequeue(out var nextTts))
-            {
-                // Insert the next TTS at the front so base plays it next
-                await Queue.InsertAsync(0, new TrackQueueItem(nextTts), cancellationToken);
-            }
-            else
-            {
-                // All TTS done — restore volume and re-queue interrupted music
-                _playingTts = false;
-                await SetVolumeAsync(_preInterruptVolume, cancellationToken);
+        LavalinkTrack? nextTts = null;
+        float? restoreVolume = null;
 
-                if (_interruptedItem is not null)
+        lock (_sync)
+        {
+            // Only the end of a TTS clip moves the session along. In particular, the music ending with
+            // reason Replaced when a clip starts must not be mistaken for the clip ending.
+            if (_ttsActive && IsTtsItem(queueItem))
+            {
+                _ttsTrackIds.Remove(queueItem.Track!.Identifier);
+
+                if (endReason.MayStartNext() && _ttsQueue.TryDequeue(out var next))
+                    nextTts = next;
+                else
+                    restoreVolume = _preInterruptVolume;
+            }
+        }
+
+        ITrackQueueItem? restoreItem = null;
+
+        if (restoreVolume is not null)
+        {
+            // The session stays open while this awaits, so clips requested meanwhile are queued rather
+            // than started and then immediately replaced by the restored music
+            await SetVolumeAsync(restoreVolume.Value, cancellationToken);
+
+            float? reboostVolume = null;
+            lock (_sync)
+            {
+                if (endReason.MayStartNext() && _ttsQueue.TryDequeue(out var late))
                 {
-                    await Queue.InsertAsync(0, _interruptedItem, cancellationToken);
-                    _interruptedItem = null;
+                    nextTts = late;
+                    reboostVolume = BoostVolume(_preInterruptVolume);
                 }
                 else
                 {
-                    _interruptedPosition = null;
-                    _pauseAfterTts = false;
+                    restoreItem = _interruptedItem;
+                    _pendingRestore = restoreItem?.Track is { } track
+                        ? new PendingRestore(track.Identifier, _interruptedPosition, _pauseAfterTts)
+                        : null;
+                    ClearTtsSession();
                 }
             }
+
+            if (reboostVolume is not null)
+                await SetVolumeAsync(reboostVolume.Value, cancellationToken);
+        }
+
+        if (nextTts is not null)
+        {
+            lock (_sync)
+                _ttsDeadline = GetClipDeadline(nextTts);
+
+            // Insert the next TTS at the front so base plays it next
+            await Queue.InsertAsync(0, new TrackQueueItem(nextTts), cancellationToken);
+        }
+        else if (restoreItem is not null)
+        {
+            await Queue.InsertAsync(0, restoreItem, cancellationToken);
         }
 
         await base.NotifyTrackEndedAsync(queueItem, endReason, cancellationToken);
@@ -203,31 +328,61 @@ public class TtsQueuedPlayer : QueuedLavalinkPlayer
     {
         await base.NotifyTrackStartedAsync(track, cancellationToken);
 
-        if (track.Track is not null && _ttsTrackIds.Remove(track.Track.Identifier))
+        PendingRestore? restore;
+        lock (_sync)
         {
-            if (!_playingTts)
-            {
-                _playingTts = true;
-                _preInterruptVolume = Volume;
-                await SetVolumeAsync(Math.Min(1.0f, Volume * TtsVolumeBoost), cancellationToken);
-            }
-        }
-        else if (_interruptedPosition.HasValue)
-        {
-            if (_interruptedPosition.Value > TimeSpan.Zero && track.Track is { IsSeekable: true })
-                await SeekAsync(_interruptedPosition.Value, cancellationToken);
-            _interruptedPosition = null;
+            if (IsTtsItem(track))
+                return;
 
-            if (_pauseAfterTts)
-            {
-                _pauseAfterTts = false;
-                await PauseAsync(cancellationToken);
-            }
+            restore = _pendingRestore;
+            _pendingRestore = null;
         }
+
+        if (restore is null || track.Track?.Identifier != restore.Identifier)
+            return;
+
+        if (restore.Position is { } position && position > TimeSpan.Zero && track.Track is { IsSeekable: true })
+            await SeekAsync(position, cancellationToken);
+
+        if (restore.Pause)
+            await PauseAsync(cancellationToken);
     }
 
-    private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max) =>
-        value < min ? min : value > max ? max : value;
+    private bool IsTtsItem(ITrackQueueItem? item) =>
+        item?.Track is { } track && _ttsTrackIds.Contains(track.Identifier);
+
+    /// <summary>Resets the TTS session. Callers must hold <see cref="_sync"/>.</summary>
+    private void ClearTtsSession()
+    {
+        _ttsActive = false;
+        _ttsQueue.Clear();
+        _ttsTrackIds.Clear();
+        _interruptedItem = null;
+        _interruptedPosition = null;
+        _pauseAfterTts = false;
+    }
+
+    private TimeSpan? GetPlaybackPosition()
+    {
+        if (CurrentTrack is not { } track || Position is not { } position)
+            return null;
+
+        // The interpolated position keeps advancing while paused, so use the last synced value instead
+        TimeSpan value = IsPaused ? position.RelativePosition : position.Position;
+        return value < TimeSpan.Zero ? TimeSpan.Zero : value > track.Duration ? track.Duration : value;
+    }
+
+    private static DateTimeOffset GetClipDeadline(LavalinkTrack clip)
+    {
+        TimeSpan duration = clip.IsLiveStream || clip.Duration <= TimeSpan.Zero || clip.Duration > UnknownClipDuration
+            ? UnknownClipDuration
+            : clip.Duration;
+        return DateTimeOffset.UtcNow + duration + StaleSessionGrace;
+    }
+
+    private static float BoostVolume(float volume) => Math.Min(1.0f, volume * TtsVolumeBoost);
+
+    private sealed record PendingRestore(string Identifier, TimeSpan? Position, bool Pause);
 
     public static ValueTask<TtsQueuedPlayer> CreateAsync(
         IPlayerProperties<TtsQueuedPlayer, QueuedLavalinkPlayerOptions> properties,
