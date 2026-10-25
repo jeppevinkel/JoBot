@@ -20,4 +20,10 @@ public class VoiceBackendOptions
 
     /// <summary>ffprobe executable used by the native backend to read track durations and tags.</summary>
     public string FfprobePath { get; init; } = "ffprobe";
+
+    /// <summary>
+    /// How long the bot stays in a voice channel with no other (non-bot) users before leaving.
+    /// Applies to both backends. Set to 00:00:00 to never leave automatically.
+    /// </summary>
+    public TimeSpan AloneTimeout { get; init; } = TimeSpan.FromMinutes(10);
 }

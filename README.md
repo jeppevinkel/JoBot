@@ -76,6 +76,8 @@ Audio can be played through one of two backends, chosen with `Voice__Backend`:
 
 To use the native backend, set `Voice__Backend=Native` and drop the `lavalink` service and `Lavalink__*` variables from the compose file. The Docker image includes ffmpeg; when running outside Docker, `ffmpeg` and `ffprobe` must be on the `PATH`, or set `Voice__FfmpegPath` / `Voice__FfprobePath`.
 
+With either backend, the bot leaves a voice channel after it has been there for 10 minutes without any other non-bot users. Change this with `Voice__AloneTimeout` (e.g. `00:30:00`), or set it to `00:00:00` to stay indefinitely.
+
 ## Database Migrations
 
 Migrations are managed with EF Core. Run commands from the solution root:

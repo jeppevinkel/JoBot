@@ -35,6 +35,7 @@ public static class DiscordServiceExtensions
             Core.Helpers.ConfigurationValidator.Validate(("Lavalink:Passphrase", lavalinkPassphrase));
 
         services.AddHostedService<DiscordBotService>();
+        services.AddHostedService<VoiceInactivityService>();
         services.AddDiscordClient(token!, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
 
         SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
