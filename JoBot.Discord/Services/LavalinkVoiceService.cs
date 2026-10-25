@@ -247,6 +247,77 @@ public class LavalinkVoiceService : IVoiceService
         }
     }
 
+    public async Task<(PlaybackResult Result, TrackInfo? Track)> RemoveFromQueueAsync(ulong guildId, int index)
+    {
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return (PlaybackResult.NotConnected, null);
+
+            ITrackQueue queue = player.Queue;
+            if (index < 0 || index >= queue.Count)
+                return (PlaybackResult.InvalidArgument, null);
+
+            // Remove by reference so a track advancing in the meantime can't shift us onto the wrong item
+            ITrackQueueItem item = queue[index];
+            if (!await queue.RemoveAsync(item))
+                return (PlaybackResult.InvalidArgument, null);
+
+            return (PlaybackResult.Success, ToQueueItemInfo(item));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing track from queue in guild {GuildId}", guildId);
+            return (PlaybackResult.Failed, null);
+        }
+    }
+
+    public async Task<(PlaybackResult Result, TrackInfo? Track)> MoveQueueTrackAsync(ulong guildId, int fromIndex, int toIndex)
+    {
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return (PlaybackResult.NotConnected, null);
+
+            ITrackQueue queue = player.Queue;
+            if (fromIndex < 0 || fromIndex >= queue.Count || toIndex < 0)
+                return (PlaybackResult.InvalidArgument, null);
+
+            ITrackQueueItem item = queue[fromIndex];
+            if (!await queue.RemoveAsync(item))
+                return (PlaybackResult.InvalidArgument, null);
+
+            try
+            {
+                await queue.InsertAsync(Math.Min(toIndex, queue.Count), item);
+            }
+            catch
+            {
+                // Don't lose the track if the insert fails
+                await queue.AddAsync(item);
+                throw;
+            }
+
+            return (PlaybackResult.Success, ToQueueItemInfo(item));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error moving track in queue in guild {GuildId}", guildId);
+            return (PlaybackResult.Failed, null);
+        }
+    }
+
+    public async Task<int?> ClearQueueAsync(ulong guildId)
+    {
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+        if (player is null)
+            return null;
+
+        return await player.Queue.ClearAsync();
+    }
+
     /// <summary>
     /// Runs <paramref name="action"/> against the current music track, handling the not-connected,
     /// nothing-playing and error cases.
@@ -287,8 +358,9 @@ public class LavalinkVoiceService : IVoiceService
         return new QueueInfo
         {
             CurrentTrack = current is null ? null : ToTrackInfo(current),
-            QueuedTracks = queue.Select(item => new TrackInfo
+            QueuedTracks = queue.Select((item, index) => new QueuedTrackInfo
             {
+                Position = index + 1,
                 Title = item.Track?.Title ?? "Unknown",
                 Artist = item.Track?.Author ?? "Unknown",
                 Duration = item.Track?.Duration ?? TimeSpan.Zero,
@@ -304,6 +376,11 @@ public class LavalinkVoiceService : IVoiceService
         Duration = track.Duration,
         Album = GetAlbum(track)
     };
+
+    private static TrackInfo ToQueueItemInfo(ITrackQueueItem item) =>
+        item.Track is null
+            ? new TrackInfo { Title = "Unknown", Artist = "Unknown", Duration = TimeSpan.Zero }
+            : ToTrackInfo(item.Track);
 
     private static LavalinkTrack ApplyMetadata(LavalinkTrack track, string? title, string? artist, string? album)
     {

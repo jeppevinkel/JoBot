@@ -169,6 +169,37 @@ public class VoiceTools : IToolProvider
             invalidArgumentMessage: "Volume must be between 0 and 100.");
     }
 
+    [AiTool("Remove a track from the queue without affecting the current track. Use get_queue first to find the track's position")]
+    public async Task<string> RemoveFromQueueAsync(
+        [AiParameter("Guild ID")] ulong guildId,
+        [AiParameter("Position of the track in the queue, as returned by get_queue (1 is the next track)")] int position)
+    {
+        var (result, track) = await _voiceService.RemoveFromQueueAsync(guildId, position - 1);
+        return ToResultMessage(result, $"Removed \"{track?.Title}\" by {track?.Artist} from the queue.",
+            invalidArgumentMessage: "There is no track at that position. Use get_queue to check the current positions.");
+    }
+
+    [AiTool("Move a track to a different position in the queue. Use get_queue first to find the track's position")]
+    public async Task<string> MoveQueueTrackAsync(
+        [AiParameter("Guild ID")] ulong guildId,
+        [AiParameter("Current position of the track in the queue, as returned by get_queue (1 is the next track)")] int fromPosition,
+        [AiParameter("New position for the track (1 plays it next); positions past the end move it to the end")] int toPosition)
+    {
+        var (result, track) = await _voiceService.MoveQueueTrackAsync(guildId, fromPosition - 1, toPosition - 1);
+        return ToResultMessage(result, $"Moved \"{track?.Title}\" by {track?.Artist} in the queue.",
+            invalidArgumentMessage: "There is no track at that position, or the new position is invalid. Use get_queue to check the current positions.");
+    }
+
+    [AiTool("Remove all upcoming tracks from the queue. The current track keeps playing. Only use this when explicitly asked to clear the queue")]
+    public async Task<string> ClearQueueAsync(
+        [AiParameter("Guild ID")] ulong guildId)
+    {
+        var removed = await _voiceService.ClearQueueAsync(guildId);
+        return removed is null
+            ? ToolResult.Failure("Not connected to voice.")
+            : ToolResult.Success($"Removed {removed} track(s) from the queue.");
+    }
+
     private static string ToResultMessage(
         PlaybackResult result,
         string successMessage,
