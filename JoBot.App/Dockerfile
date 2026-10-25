@@ -26,9 +26,12 @@ RUN dotnet publish "./JoBot.App.csproj" -c $BUILD_CONFIGURATION -o /app/publish 
 
 FROM base AS final
 USER root
-# ffmpeg is used by the native voice backend (Voice__Backend=Native) to decode audio
+# Needed by the native voice backend (Voice__Backend=Native):
+# - ffmpeg decodes audio
+# - libssl-dev provides the unversioned libcrypto.so that DSharpPlus.Voice loads by name; the runtime
+#   image only ships libcrypto.so.3
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=publish /app/publish .
