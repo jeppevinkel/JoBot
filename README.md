@@ -11,7 +11,7 @@ A Discord bot built on .NET 10 with Claude AI integration, music streaming, and 
 | `JoBot.App` | Entry point. Wires up all services and hosts the application. |
 | `JoBot.Core` | Shared interfaces and abstractions referenced by all other projects. |
 | `JoBot.Ai` | Claude AI integration via the Anthropic SDK. |
-| `JoBot.Discord` | Discord bot logic using DSharpPlus with audio support via Lavalink4NET. |
+| `JoBot.Discord` | Discord bot logic using DSharpPlus, with audio via Lavalink4NET or natively via DSharpPlus.Voice. |
 | `JoBot.Data` | EF Core data access layer with SQLite. Contains migrations. |
 | `JoBot.Services` | Business logic and configuration services. |
 | `JoBot.Subsonic` | Subsonic music server client integration. |
@@ -64,6 +64,17 @@ Copy the snippet above to a `docker-compose.yml`, create a `.env` file with the 
 ```bash
 docker compose up -d
 ```
+
+## Voice Backends
+
+Audio can be played through one of two backends, chosen with `Voice__Backend`:
+
+| Backend | Description |
+|---|---|
+| `Lavalink` (default) | Audio is decoded and sent by a separate Lavalink server. Requires `Lavalink__Passphrase`. |
+| `Native` (experimental) | Audio is decoded locally with ffmpeg and sent with DSharpPlus.Voice, which supports Discord's DAVE end-to-end encryption. No Lavalink server is needed. TTS is mixed over the music, which is quietly ducked underneath, instead of interrupting it. |
+
+To use the native backend, set `Voice__Backend=Native` and drop the `lavalink` service and `Lavalink__*` variables from the compose file. The Docker image includes ffmpeg; when running outside Docker, `ffmpeg` and `ffprobe` must be on the `PATH`, or set `Voice__FfmpegPath` / `Voice__FfprobePath`.
 
 ## Database Migrations
 
