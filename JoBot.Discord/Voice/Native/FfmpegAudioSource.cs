@@ -57,12 +57,14 @@ public sealed class FfmpegAudioSource : IAsyncDisposable
 
     /// <param name="startPosition">Position to start decoding from.</param>
     /// <param name="onFrameAvailable">Invoked from the decoding task whenever a new frame is buffered.</param>
+    /// <param name="audioFilter">Optional ffmpeg audio filter graph (<c>-af</c>) applied before output.</param>
     public static FfmpegAudioSource Start(
         string ffmpegPath,
         string url,
         TimeSpan startPosition,
         ILogger logger,
-        Action onFrameAvailable)
+        Action onFrameAvailable,
+        string? audioFilter = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -92,7 +94,17 @@ public sealed class FfmpegAudioSource : IAsyncDisposable
             startInfo.ArgumentList.Add(startPosition.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        foreach (var arg in new[] { "-i", url, "-vn", "-ac", "2", "-ar", "48000", "-f", "s16le", "pipe:1" })
+        startInfo.ArgumentList.Add("-i");
+        startInfo.ArgumentList.Add(url);
+        startInfo.ArgumentList.Add("-vn");
+
+        if (!string.IsNullOrEmpty(audioFilter))
+        {
+            startInfo.ArgumentList.Add("-af");
+            startInfo.ArgumentList.Add(audioFilter);
+        }
+
+        foreach (var arg in new[] { "-ac", "2", "-ar", "48000", "-f", "s16le", "pipe:1" })
             startInfo.ArgumentList.Add(arg);
 
         var process = new Process { StartInfo = startInfo };

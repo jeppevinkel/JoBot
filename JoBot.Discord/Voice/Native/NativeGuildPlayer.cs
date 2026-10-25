@@ -34,6 +34,10 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
 
     private const float DuckedMusicGain = 0.3f;
     private const float TtsGain = 1.0f;
+
+    // Brings every TTS clip to the same loudness (EBU R128, speech-level target), since ElevenLabs output
+    // varies between clips and voice models. Peaks are capped at -1.5 dBTP before mixing.
+    private const string TtsLoudnessFilter = "loudnorm=I=-16:TP=-1.5:LRA=11";
     // Maximum gain change per frame, so ducking and volume changes fade over ~150 ms instead of clicking
     private const float MaxGainStepPerFrame = 0.15f;
 
@@ -299,7 +303,9 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
 
         var musicFrame = new byte[FrameSize];
         var ttsFrame = new byte[FrameSize];
+        var mixBuffer = new float[FrameSize / sizeof(short)];
         var mixFrame = new byte[FrameSize];
+        var limiter = new PeakLimiter();
 
         float musicGain;
         lock (_sync)
@@ -372,7 +378,7 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
                     }
 
                     if (nextTts is not null)
-                        tts = TryStartSource(nextTts, TimeSpan.Zero);
+                        tts = TryStartSource(nextTts, TimeSpan.Zero, TtsLoudnessFilter);
                 }
 
                 var haveTts = false;
@@ -428,7 +434,8 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
 
                 var targetGain = volume * (haveTts ? DuckedMusicGain : 1f);
                 var nextGain = StepTowards(musicGain, targetGain, MaxGainStepPerFrame);
-                Mix(mixFrame, haveMusic ? musicFrame : null, haveTts ? ttsFrame : null, musicGain, nextGain);
+                Mix(mixBuffer, haveMusic ? musicFrame : null, haveTts ? ttsFrame : null, musicGain, nextGain);
+                limiter.Process(mixBuffer, MemoryMarshal.Cast<byte, short>(mixFrame.AsSpan()));
                 musicGain = nextGain;
 
                 if (!transmitting)
@@ -497,11 +504,11 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
         return (long)metrics.AudioFramesSent + metrics.AudioFramesDropped;
     }
 
-    private FfmpegAudioSource? TryStartSource(string url, TimeSpan startPosition)
+    private FfmpegAudioSource? TryStartSource(string url, TimeSpan startPosition, string? audioFilter = null)
     {
         try
         {
-            return FfmpegAudioSource.Start(_ffmpegPath, url, startPosition, _logger, Wake);
+            return FfmpegAudioSource.Start(_ffmpegPath, url, startPosition, _logger, Wake, audioFilter);
         }
         catch (Exception ex)
         {
@@ -553,13 +560,13 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
     private async Task WaitForWakeAsync(TimeSpan timeout, CancellationToken ct) =>
         await _wake.WaitAsync(timeout, ct);
 
-    private static void Mix(Span<byte> output, byte[]? music, byte[]? tts, float startGain, float endGain)
+    /// <summary>Mixes the sources into <paramref name="output"/> without clipping; the limiter handles overs.</summary>
+    private static void Mix(Span<float> output, byte[]? music, byte[]? tts, float startGain, float endGain)
     {
-        Span<short> outSamples = MemoryMarshal.Cast<byte, short>(output);
         ReadOnlySpan<short> musicSamples = music is null ? default : MemoryMarshal.Cast<byte, short>(music);
         ReadOnlySpan<short> ttsSamples = tts is null ? default : MemoryMarshal.Cast<byte, short>(tts);
 
-        var count = outSamples.Length;
+        var count = output.Length;
         var gainStep = (endGain - startGain) / count;
 
         for (var i = 0; i < count; i++)
@@ -570,7 +577,7 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
             if (tts is not null)
                 value += ttsSamples[i] * TtsGain;
 
-            outSamples[i] = (short)Math.Clamp(value, short.MinValue, short.MaxValue);
+            output[i] = value;
         }
     }
 
