@@ -171,7 +171,108 @@ public class LavalinkVoiceService : IVoiceService
     {
         TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
         if (player is null) return;
-        await player.SkipAsync();
+        await player.SkipMusicAsync();
+    }
+
+    public async Task<NowPlayingInfo?> GetNowPlayingAsync(ulong guildId)
+    {
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+        if (player is null)
+            return null;
+
+        LavalinkTrack? track = player.CurrentMusicTrack;
+        TimeSpan? position = player.MusicPosition;
+
+        return new NowPlayingInfo
+        {
+            Track = track is null ? null : ToTrackInfo(track),
+            // Whole seconds are precise enough and keep the output readable
+            Position = track is null || position is null ? null : TimeSpan.FromSeconds(Math.Floor(position.Value.TotalSeconds)),
+            IsPaused = track is not null && player.IsMusicPaused,
+            IsPlayingTts = player.IsPlayingTts
+        };
+    }
+
+    public Task<PlaybackResult> PauseAsync(ulong guildId) =>
+        ExecuteOnMusicAsync(guildId, "pausing playback", async (player, _) =>
+        {
+            await player.PauseMusicAsync();
+            return PlaybackResult.Success;
+        });
+
+    public Task<PlaybackResult> ResumeAsync(ulong guildId) =>
+        ExecuteOnMusicAsync(guildId, "resuming playback", async (player, _) =>
+        {
+            await player.ResumeMusicAsync();
+            return PlaybackResult.Success;
+        });
+
+    public Task<PlaybackResult> SeekAsync(ulong guildId, TimeSpan position) =>
+        ExecuteOnMusicAsync(guildId, "seeking", async (player, track) =>
+        {
+            if (!track.IsSeekable || track.IsLiveStream)
+                return PlaybackResult.NotSeekable;
+
+            if (position < TimeSpan.Zero || position > track.Duration)
+                return PlaybackResult.InvalidArgument;
+
+            await player.SeekMusicAsync(position);
+            return PlaybackResult.Success;
+        });
+
+    public async Task<float?> GetVolumeAsync(ulong guildId)
+    {
+        TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+        return player?.MusicVolume;
+    }
+
+    public async Task<PlaybackResult> SetVolumeAsync(ulong guildId, float volume)
+    {
+        if (float.IsNaN(volume) || volume is < 0f or > 1f)
+            return PlaybackResult.InvalidArgument;
+
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return PlaybackResult.NotConnected;
+
+            await player.SetMusicVolumeAsync(volume);
+            return PlaybackResult.Success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting volume for guild {GuildId}", guildId);
+            return PlaybackResult.Failed;
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> against the current music track, handling the not-connected,
+    /// nothing-playing and error cases.
+    /// </summary>
+    private async Task<PlaybackResult> ExecuteOnMusicAsync(
+        ulong guildId,
+        string description,
+        Func<TtsQueuedPlayer, LavalinkTrack, Task<PlaybackResult>> action)
+    {
+        try
+        {
+            TtsQueuedPlayer? player = await GetPlayerAsync(guildId);
+            if (player is null)
+                return PlaybackResult.NotConnected;
+
+            LavalinkTrack? track = player.CurrentMusicTrack;
+            if (track is null)
+                return PlaybackResult.NothingPlaying;
+
+            return await action(player, track);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error {Action} in guild {GuildId}", description, guildId);
+            return PlaybackResult.Failed;
+        }
     }
 
     public async Task<QueueInfo?> GetQueueAsync(ulong guildId)
@@ -180,20 +281,12 @@ public class LavalinkVoiceService : IVoiceService
         if (player is null)
             return null;
 
-        LavalinkTrack? current = player.CurrentTrack;
+        LavalinkTrack? current = player.CurrentMusicTrack;
         ITrackQueue queue = player.Queue;
 
         return new QueueInfo
         {
-            CurrentTrack = current is null
-                ? null
-                : new TrackInfo
-                {
-                    Title = current.Title,
-                    Artist = current.Author,
-                    Duration = current.Duration,
-                    Album = GetAlbum(current)
-                },
+            CurrentTrack = current is null ? null : ToTrackInfo(current),
             QueuedTracks = queue.Select(item => new TrackInfo
             {
                 Title = item.Track?.Title ?? "Unknown",
@@ -203,6 +296,14 @@ public class LavalinkVoiceService : IVoiceService
             }).ToList()
         };
     }
+
+    private static TrackInfo ToTrackInfo(LavalinkTrack track) => new()
+    {
+        Title = track.Title,
+        Artist = track.Author,
+        Duration = track.Duration,
+        Album = GetAlbum(track)
+    };
 
     private static LavalinkTrack ApplyMetadata(LavalinkTrack track, string? title, string? artist, string? album)
     {
