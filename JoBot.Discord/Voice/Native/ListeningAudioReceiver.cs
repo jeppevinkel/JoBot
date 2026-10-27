@@ -1,11 +1,9 @@
-﻿using System.Buffers;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.Voice;
-using DSharpPlus.Voice.Codec;
 using DSharpPlus.Voice.Receivers;
 using JoBot.Core.Interfaces;
 using JoBot.Discord.Voice.Listening;
@@ -30,8 +28,8 @@ namespace JoBot.Discord.Voice.Native;
 /// </remarks>
 public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
 {
-    public const int SampleRate = 48000;
-    private const int Channels = 2;
+    public const int SampleRate = OpusPacketDecoder.SampleRate;
+    private const int Channels = OpusPacketDecoder.Channels;
 
     // Opus' "comfort noise" frame; clients send a few of these when they stop talking
     private static readonly byte[] OpusSilenceFrame = [0xF8, 0xFF, 0xFE];
@@ -51,7 +49,6 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private static readonly FieldInfo? ReceiveTaskField =
         typeof(VoiceConnection).GetField("receiveAudioTask", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    private readonly IAudioCodec _codec;
     private readonly DiscordClient _discordClient;
     private readonly SpeakerIdentifier _speakerIdentifier;
     private readonly GuardedE2EESession _e2ee;
@@ -76,7 +73,6 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private volatile bool _disposed;
 
     public ListeningAudioReceiver(
-        IAudioCodec codec,
         DiscordClient discordClient,
         SpeakerIdentifier speakerIdentifier,
         GuardedE2EESession e2ee,
@@ -85,7 +81,6 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         IOptions<VoiceListeningOptions> options,
         ILogger<ListeningAudioReceiver> logger)
     {
-        _codec = codec;
         _discordClient = discordClient;
         _speakerIdentifier = speakerIdentifier;
         _e2ee = e2ee;
@@ -154,7 +149,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
 
         if (!_speakers.TryGetValue(userId, out Speaker? speaker))
         {
-            speaker = _speakers.GetOrAdd(userId, _ => new Speaker(_codec.CreateDecoder()));
+            speaker = _speakers.GetOrAdd(userId, _ => new Speaker());
             _logger.LogInformation("Receiving audio from user {UserId} in voice channel {ChannelId}", userId, _channelId);
         }
 
@@ -385,9 +380,9 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     }
 
     /// <summary>One user's decoder and the mono audio buffered since their last pause.</summary>
-    private sealed class Speaker(IAudioDecoder decoder) : IDisposable
+    private sealed class Speaker : IDisposable
     {
-        private readonly ArrayBufferWriter<short> _decoded = new();
+        private readonly OpusPacketDecoder _decoder = new();
         private short[] _buffer = new short[SampleRate * 5];
 
         public int Count { get; private set; }
@@ -396,11 +391,8 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
 
         public void Decode(byte[] opus)
         {
-            _decoded.ResetWrittenCount();
-            decoder.Decode(opus, _decoded);
-
             // Down-mix to mono; speech-to-text models don't use stereo
-            ReadOnlySpan<short> stereo = _decoded.WrittenSpan;
+            ReadOnlySpan<short> stereo = _decoder.Decode(opus);
             var frames = stereo.Length / Channels;
             EnsureCapacity(Count + frames);
 
@@ -436,7 +428,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
                 return;
 
             IsDisposed = true;
-            decoder.Dispose();
+            _decoder.Dispose();
         }
     }
 }
