@@ -1,4 +1,5 @@
-﻿FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
+﻿# Ubuntu 26.04: the Opus library bundled with DSharpPlus.Voice needs glibc 2.43, newer than 24.04 provides
+FROM mcr.microsoft.com/dotnet/runtime:10.0-resolute AS base
 USER $APP_UID
 WORKDIR /app
 
@@ -25,6 +26,13 @@ RUN dotnet publish "./JoBot.App.csproj" -c $BUILD_CONFIGURATION -o /app/publish 
 
 FROM base AS final
 USER root
+# Needed by the native voice backend (Voice__Backend=Native):
+# - ffmpeg decodes audio
+# - libssl-dev provides the unversioned libcrypto.so that DSharpPlus.Voice loads by name; the runtime
+#   image only ships libcrypto.so.3
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=publish /app/publish .
 RUN mkdir -p /app/data && chown $APP_UID:$APP_UID /app/data

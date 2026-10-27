@@ -11,6 +11,9 @@ using JoBot.Discord.Handlers;
 using JoBot.Discord.Resolvers;
 using JoBot.Discord.Services;
 using JoBot.Discord.Tools;
+using JoBot.Discord.Voice;
+using JoBot.Discord.Voice.Native;
+using DSharpPlus.Voice;
 using Lavalink4NET.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,13 +28,14 @@ public static class DiscordServiceExtensions
         var debugGuildId = ulong.Parse(config["Discord:DebugGuildId"] ?? "0");
         var lavalinkBaseAddress = config["Lavalink:BaseAddress"] ?? "http://localhost:2333";
         var lavalinkPassphrase = config["Lavalink:Passphrase"];
+        var voiceOptions = config.GetSection(VoiceBackendOptions.SectionName).Get<VoiceBackendOptions>() ?? new VoiceBackendOptions();
 
-        Core.Helpers.ConfigurationValidator.Validate(
-            ("Discord:Token", token),
-            ("Lavalink:Passphrase", lavalinkPassphrase)
-        );
+        Core.Helpers.ConfigurationValidator.Validate(("Discord:Token", token));
+        if (voiceOptions.Backend is VoiceBackend.Lavalink)
+            Core.Helpers.ConfigurationValidator.Validate(("Lavalink:Passphrase", lavalinkPassphrase));
 
         services.AddHostedService<DiscordBotService>();
+        services.AddHostedService<VoiceInactivityService>();
         services.AddDiscordClient(token!, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
 
         SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
@@ -50,14 +54,25 @@ public static class DiscordServiceExtensions
             RegisterDefaultCommandProcessors = false
         });
 
-        services.AddLavalink();
-        services.ConfigureLavalink(c =>
-        {
-            c.BaseAddress = new Uri(lavalinkBaseAddress);
-            c.Passphrase = lavalinkPassphrase!;
-        });
+        services.AddOptions<VoiceBackendOptions>()
+            .Bind(config.GetSection(VoiceBackendOptions.SectionName));
 
-        // services.AddVoiceExtension();
+        if (voiceOptions.Backend is VoiceBackend.Native)
+        {
+            services.AddVoiceExtension();
+            services.AddSingleton<IVoiceService, NativeVoiceService>();
+        }
+        else
+        {
+            services.AddLavalink();
+            services.ConfigureLavalink(c =>
+            {
+                c.BaseAddress = new Uri(lavalinkBaseAddress);
+                c.Passphrase = lavalinkPassphrase!;
+            });
+            services.AddSingleton<IVoiceService, LavalinkVoiceService>();
+        }
+
         services.ConfigureEventHandlers(b =>
         {
             b.AddEventHandlers<ReadyHandler>();
@@ -66,8 +81,6 @@ public static class DiscordServiceExtensions
         });
         services.AddSingleton<IDisplayNameResolver, DisplayNameResolver>();
         services.AddSingleton<IMessagePayloadBuilder, MessagePayloadBuilder>();
-        // services.AddSingleton<IVoiceService, DiscordVoiceService>();
-        services.AddSingleton<IVoiceService, LavalinkVoiceService>();
 
         // Tools
         services.AddSingleton<IToolProvider, VoiceTools>();
