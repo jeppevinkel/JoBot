@@ -108,7 +108,10 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         _connection = connection;
         _guildId = guildId;
         _channelId = connection.ChannelId;
-        _speakerIdentifier.Attach(connection, GetPeopleInChannel);
+
+        if (!_speakerIdentifier.Attach(connection, GetPeopleInChannel))
+            _logger.LogWarning("Can't identify speakers Discord doesn't announce with this version of DSharpPlus.Voice");
+
         _lastMetrics = VoiceMetricsSnapshot.From(connection);
         _flushTimer = new Timer(_ => FlushQuietSpeakers(), null, FlushCheckInterval, FlushCheckInterval);
         _statsTimer = new Timer(_ => LogStats(), null, StatsInterval, StatsInterval);

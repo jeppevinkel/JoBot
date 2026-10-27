@@ -16,6 +16,7 @@ using JoBot.Discord.Voice.Listening;
 using JoBot.Discord.Voice.Native;
 using DSharpPlus.Voice;
 using DSharpPlus.Voice.Cryptors;
+using DSharpPlus.Voice.E2EE;
 using DSharpPlus.Voice.Transport;
 using Lavalink4NET.Extensions;
 using Microsoft.Extensions.Configuration;
@@ -76,6 +77,8 @@ public static class DiscordServiceExtensions
                 // Resolved from each voice connection's service scope
                 services.AddScoped<ListeningAudioReceiver>();
                 // Work around bugs in the library's receive path; see these classes
+                services.AddScoped<GuardedE2EESession>();
+                services.AddScoped<IE2EESession>(sp => sp.GetRequiredService<GuardedE2EESession>());
                 services.AddScoped<SpeakerIdentifier>();
                 services.AddScoped<ICryptorFactory>(sp => new ExtensionStrippingCryptorFactory(
                     ActivatorUtilities.CreateInstance<DefaultCryptorFactory>(sp),

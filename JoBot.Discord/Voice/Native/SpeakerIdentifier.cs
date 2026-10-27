@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -6,7 +6,6 @@ using System.Reflection;
 using CommunityToolkit.HighPerformance.Buffers;
 using DSharpPlus.Voice;
 using DSharpPlus.Voice.Cryptors;
-using DSharpPlus.Voice.E2EE;
 using Microsoft.Extensions.Logging;
 
 namespace JoBot.Discord.Voice.Native;
@@ -22,7 +21,8 @@ namespace JoBot.Discord.Voice.Native;
 /// </para>
 /// <para>
 /// With DAVE, each user's audio can only be decrypted with that user's key. So for an unknown stream, one packet is
-/// decrypted as each person in the channel who hasn't been identified yet; if exactly one of them succeeds, that's
+/// decrypted as each person in the channel who hasn't been identified yet and whose key we have (see
+/// <see cref="GuardedE2EESession"/> for why that matters); if exactly one of them succeeds, that's
 /// the speaker, and the library is told just as if Discord had sent the Speaking event. Streams from other bots
 /// don't decrypt as anyone, so they're never mistaken for a person.
 /// </para>
@@ -31,7 +31,7 @@ namespace JoBot.Discord.Voice.Native;
 /// sees them.
 /// </para>
 /// </remarks>
-public sealed class SpeakerIdentifier(IE2EESession e2ee, ILogger<SpeakerIdentifier> logger)
+public sealed class SpeakerIdentifier(GuardedE2EESession e2ee, ILogger<SpeakerIdentifier> logger)
 {
     private const byte OpusPayloadType = 0x78;
     private const int RtpHeaderSize = 12;
@@ -60,7 +60,7 @@ public sealed class SpeakerIdentifier(IE2EESession e2ee, ILogger<SpeakerIdentifi
     public bool Attach(VoiceConnection connection, Func<IReadOnlyCollection<ulong>> getPeopleInChannel)
     {
         _ssrcs = SsrcsField?.GetValue(connection) as ConcurrentDictionary<uint, ulong>;
-        if (_ssrcs is null || RegisterSpeakingMethod is null)
+        if (_ssrcs is null || RegisterSpeakingMethod is null || !GuardedE2EESession.CanReadRoster)
             return false;
 
         _getPeopleInChannel = getPeopleInChannel;
@@ -102,7 +102,7 @@ public sealed class SpeakerIdentifier(IE2EESession e2ee, ILogger<SpeakerIdentifi
     private ulong? Identify(ICryptor cryptor, ReadOnlySpan<byte> packet)
     {
         var known = _ssrcs!.Values.ToHashSet();
-        var candidates = _getPeopleInChannel!().Where(user => !known.Contains(user)).ToList();
+        var candidates = _getPeopleInChannel!().Where(user => !known.Contains(user) && e2ee.HasKeyFor(user)).ToList();
         if (candidates.Count == 0)
             return null;
 
