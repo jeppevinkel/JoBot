@@ -16,6 +16,7 @@ using JoBot.Discord.Voice.Listening;
 using JoBot.Discord.Voice.Native;
 using DSharpPlus.Voice;
 using DSharpPlus.Voice.Cryptors;
+using DSharpPlus.Voice.Transport;
 using Lavalink4NET.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,8 +75,10 @@ public static class DiscordServiceExtensions
             {
                 // Resolved from each voice connection's service scope
                 services.AddScoped<ListeningAudioReceiver>();
+                // Work around bugs in the library's receive path; see these classes
                 services.AddScoped<ICryptorFactory>(sp =>
                     new ExtensionStrippingCryptorFactory(ActivatorUtilities.CreateInstance<DefaultCryptorFactory>(sp)));
+                services.AddScoped<IMediaTransportService, RtcpFilteringMediaTransport>();
                 services.AddSingleton<VoiceListeningService>();
                 services.AddSingleton<IUtteranceSink>(sp => sp.GetRequiredService<VoiceListeningService>());
                 services.AddHostedService(sp => sp.GetRequiredService<VoiceListeningService>());

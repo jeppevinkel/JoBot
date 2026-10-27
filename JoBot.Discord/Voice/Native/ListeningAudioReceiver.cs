@@ -45,6 +45,10 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private static readonly FieldInfo? SsrcsField =
         typeof(VoiceConnection).GetField("ssrcs", BindingFlags.Instance | BindingFlags.NonPublic);
 
+    // The library doesn't observe its receive loop, so if that dies nothing would ever say so
+    private static readonly FieldInfo? ReceiveTaskField =
+        typeof(VoiceConnection).GetField("receiveAudioTask", BindingFlags.Instance | BindingFlags.NonPublic);
+
     private readonly IAudioCodec _codec;
     private readonly ITranscriptionService _transcription;
     private readonly IUtteranceSink _sink;
@@ -62,6 +66,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private Timer? _statsTimer;
     private ReceiveStats _stats;
     private VoiceMetricsSnapshot _lastMetrics;
+    private bool _reportedReceiveFailure;
     private volatile bool _attached;
     private volatile bool _disposed;
 
@@ -239,6 +244,14 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     {
         if (_connection is null || _disposed)
             return;
+
+        if (!_reportedReceiveFailure && ReceiveTaskField?.GetValue(_connection) is Task { IsFaulted: true } receiveTask)
+        {
+            _reportedReceiveFailure = true;
+            _logger.LogError(receiveTask.Exception?.GetBaseException(),
+                "The voice library stopped receiving audio in channel {ChannelId}; rejoin the channel to listen again",
+                _channelId);
+        }
 
         VoiceMetricsSnapshot metrics;
         try
