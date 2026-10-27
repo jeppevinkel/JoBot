@@ -1,4 +1,4 @@
-<Solution>
+﻿<Solution>
   <Folder Name="/RepositoryDocuments/">
     <File Path=".dockerignore" />
     <File Path=".gitignore" />
@@ -13,5 +13,6 @@
   <Project Path="JoBot.Services/JoBot.Services.csproj" />
   <Project Path="JoBot.Subsonic/JoBot.Subsonic.csproj" />
   <Project Path="JoBot.TextToSpeech/JoBot.TextToSpeech.csproj" />
+  <Project Path="JoBot.Transcription/JoBot.Transcription.csproj" />
   <Project Path="JoBot.YouTube/JoBot.YouTube.csproj" />
 </Solution>

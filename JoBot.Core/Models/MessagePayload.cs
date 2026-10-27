@@ -19,6 +19,10 @@ public record MessagePayload
     [JsonPropertyName("mentioned_users")]
     public IReadOnlyList<UserInfo> MentionedUsers { get; init; } = [];
 
+    [JsonPropertyName("spoken_input")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SpokenInputInfo? SpokenInput { get; init; }
+
     [JsonPropertyName("is_first_after_reboot")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsFirstAfterReboot { get; init; }

@@ -72,6 +72,46 @@ public class MessagePayloadBuilder : IMessagePayloadBuilder
         };
     }
 
+    public async Task<MessagePayload> BuildFromTranscriptAsync(
+        DiscordGuild guild,
+        DiscordChannel voiceChannel,
+        DiscordUser author,
+        string transcript,
+        SpokenInputInfo spokenInput)
+    {
+        var authorName = await _resolver.ResolveAsync(author, guild);
+        var channel = new ChannelInfo
+        {
+            Id = voiceChannel.Id.ToString(),
+            Name = voiceChannel.Name
+        };
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        return new MessagePayload
+        {
+            Source = new SourceInfo
+            {
+                Type = "voice",
+                Guild = new GuildInfo { Id = guild.Id.ToString(), Name = guild.Name },
+                Channel = channel
+            },
+            Author = new UserInfo
+            {
+                Id = author.Id.ToString(),
+                DisplayName = authorName,
+                VoiceChannel = channel
+            },
+            Message = new MessageInfo
+            {
+                // Spoken messages have no Discord message ID
+                Id = $"voice-{now.ToUnixTimeMilliseconds()}",
+                Content = transcript,
+                Timestamp = now
+            },
+            SpokenInput = spokenInput
+        };
+    }
+
     private async Task<ChannelInfo?> ResolveVoiceChannelAsync(DiscordGuild? guild, ulong userId)
     {
         if (guild is null || !guild.VoiceStates.TryGetValue(userId, out DiscordVoiceState? voiceState))

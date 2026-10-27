@@ -12,6 +12,7 @@ using JoBot.Discord.Resolvers;
 using JoBot.Discord.Services;
 using JoBot.Discord.Tools;
 using JoBot.Discord.Voice;
+using JoBot.Discord.Voice.Listening;
 using JoBot.Discord.Voice.Native;
 using DSharpPlus.Voice;
 using Lavalink4NET.Extensions;
@@ -29,10 +30,14 @@ public static class DiscordServiceExtensions
         var lavalinkBaseAddress = config["Lavalink:BaseAddress"] ?? "http://localhost:2333";
         var lavalinkPassphrase = config["Lavalink:Passphrase"];
         var voiceOptions = config.GetSection(VoiceBackendOptions.SectionName).Get<VoiceBackendOptions>() ?? new VoiceBackendOptions();
+        var listeningOptions = config.GetSection(VoiceListeningOptions.SectionName).Get<VoiceListeningOptions>() ?? new VoiceListeningOptions();
 
         Core.Helpers.ConfigurationValidator.Validate(("Discord:Token", token));
         if (voiceOptions.Backend is VoiceBackend.Lavalink)
             Core.Helpers.ConfigurationValidator.Validate(("Lavalink:Passphrase", lavalinkPassphrase));
+        if (listeningOptions.Enabled && voiceOptions.Backend is not VoiceBackend.Native)
+            throw new InvalidOperationException(
+                $"{VoiceListeningOptions.SectionName}:Enabled requires {VoiceBackendOptions.SectionName}:Backend to be {VoiceBackend.Native}");
 
         services.AddHostedService<DiscordBotService>();
         services.AddHostedService<VoiceInactivityService>();
@@ -56,11 +61,22 @@ public static class DiscordServiceExtensions
 
         services.AddOptions<VoiceBackendOptions>()
             .Bind(config.GetSection(VoiceBackendOptions.SectionName));
+        services.AddOptions<VoiceListeningOptions>()
+            .Bind(config.GetSection(VoiceListeningOptions.SectionName));
 
         if (voiceOptions.Backend is VoiceBackend.Native)
         {
             services.AddVoiceExtension();
             services.AddSingleton<IVoiceService, NativeVoiceService>();
+
+            if (listeningOptions.Enabled)
+            {
+                // Resolved from each voice connection's service scope
+                services.AddScoped<ListeningAudioReceiver>();
+                services.AddSingleton<VoiceListeningService>();
+                services.AddSingleton<IUtteranceSink>(sp => sp.GetRequiredService<VoiceListeningService>());
+                services.AddHostedService(sp => sp.GetRequiredService<VoiceListeningService>());
+            }
         }
         else
         {

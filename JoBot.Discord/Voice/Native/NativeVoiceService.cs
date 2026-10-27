@@ -5,6 +5,7 @@ using DSharpPlus.Entities;
 using DSharpPlus.Voice;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
+using JoBot.Discord.Voice.Listening;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,6 +22,7 @@ public class NativeVoiceService : IVoiceService
     private readonly DiscordClient _discordClient;
     private readonly IGuildSettingsService _settingsService;
     private readonly VoiceBackendOptions _options;
+    private readonly VoiceListeningOptions _listeningOptions;
     private readonly ConcurrentDictionary<ulong, NativeGuildPlayer> _players = new();
     private readonly ConcurrentDictionary<ulong, SemaphoreSlim> _connectionLocks = new();
 
@@ -29,13 +31,15 @@ public class NativeVoiceService : IVoiceService
         ILogger<NativeGuildPlayer> playerLogger,
         DiscordClient discordClient,
         IGuildSettingsService settingsService,
-        IOptions<VoiceBackendOptions> options)
+        IOptions<VoiceBackendOptions> options,
+        IOptions<VoiceListeningOptions> listeningOptions)
     {
         _logger = logger;
         _playerLogger = playerLogger;
         _discordClient = discordClient;
         _settingsService = settingsService;
         _options = options.Value;
+        _listeningOptions = listeningOptions.Value;
     }
 
     public async Task<bool> JoinVoiceChannelAsync(ulong guildId, ulong channelId)
@@ -70,10 +74,15 @@ public class NativeVoiceService : IVoiceService
 
             GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
 
-            VoiceConnection connection = await channel.ConnectAsync(options: new VoiceConnectionOptions
-            {
-                AudioType = AudioType.Music
-            });
+            VoiceConnection connection = await channel.ConnectAsync(
+                receiverType: _listeningOptions.Enabled ? typeof(ListeningAudioReceiver) : null,
+                options: new VoiceConnectionOptions
+                {
+                    AudioType = AudioType.Music
+                });
+
+            if (connection.Receiver is ListeningAudioReceiver receiver)
+                receiver.Attach(connection, guildId);
 
             var player = new NativeGuildPlayer(connection, settings.MusicVolume, _options.FfmpegPath, _playerLogger);
             connection.SetDisconnectHandler(HandleDisconnectAsync, (guildId, player));

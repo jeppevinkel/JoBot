@@ -15,6 +15,7 @@ COPY ["JoBot.Data/JoBot.Data.csproj", "JoBot.Data/"]
 COPY ["JoBot.Services/JoBot.Services.csproj", "JoBot.Services/"]
 COPY ["JoBot.YouTube/JoBot.YouTube.csproj", "JoBot.YouTube/"]
 COPY ["JoBot.TextToSpeech/JoBot.TextToSpeech.csproj", "JoBot.TextToSpeech/"]
+COPY ["JoBot.Transcription/JoBot.Transcription.csproj", "JoBot.Transcription/"]
 RUN dotnet restore "JoBot.App/JoBot.App.csproj"
 COPY . .
 WORKDIR "/src/JoBot.App"

@@ -24,6 +24,7 @@
       <ProjectReference Include="..\JoBot.Services\JoBot.Services.csproj" />
       <ProjectReference Include="..\JoBot.Subsonic\JoBot.Subsonic.csproj" />
       <ProjectReference Include="..\JoBot.TextToSpeech\JoBot.TextToSpeech.csproj" />
+      <ProjectReference Include="..\JoBot.Transcription\JoBot.Transcription.csproj" />
       <ProjectReference Include="..\JoBot.YouTube\JoBot.YouTube.csproj" />
     </ItemGroup>
 
