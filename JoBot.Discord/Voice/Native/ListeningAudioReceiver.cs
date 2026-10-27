@@ -54,6 +54,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private readonly IAudioCodec _codec;
     private readonly DiscordClient _discordClient;
     private readonly SpeakerIdentifier _speakerIdentifier;
+    private readonly GuardedE2EESession _e2ee;
     private readonly ITranscriptionService _transcription;
     private readonly IUtteranceSink _sink;
     private readonly VoiceListeningOptions _options;
@@ -78,6 +79,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         IAudioCodec codec,
         DiscordClient discordClient,
         SpeakerIdentifier speakerIdentifier,
+        GuardedE2EESession e2ee,
         ITranscriptionService transcription,
         IUtteranceSink sink,
         IOptions<VoiceListeningOptions> options,
@@ -86,6 +88,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         _codec = codec;
         _discordClient = discordClient;
         _speakerIdentifier = speakerIdentifier;
+        _e2ee = e2ee;
         _transcription = transcription;
         _sink = sink;
         _options = options.Value;
@@ -293,6 +296,8 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         VoiceMetricsSnapshot delta = metrics - _lastMetrics;
         _lastMetrics = metrics;
         ReceiveStats stats = ReceiveStats.TakeFrom(ref _stats);
+        var dave = _e2ee.TakeStats();
+        var identification = _speakerIdentifier.TakeStats();
 
         // Stay quiet while nobody talks
         if (delta.FramesReceived == 0 && stats.Packets == 0)
@@ -307,6 +312,16 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
             _channelId, StatsInterval, delta.FramesReceived, delta.FailedDecryption, delta.Dropped,
             stats.Packets, stats.TranscriptionUnavailable, stats.UnknownSpeaker, stats.Ignored, stats.DecodeFailures,
             stats.Utterances);
+
+        _logger.LogInformation(
+            "Voice receive details in channel {ChannelId}: DAVE decryption {Decrypted} succeeded, {DaveFailed} failed, " +
+            "{Refused} refused for users without keys (keys for: {UsersWithKeys}); known streams: {KnownStreams}; " +
+            "identifying unknown streams: {Attempts} attempts, {NoCandidates} without candidates, {NoMatch} without a match; " +
+            "people in channel: {People}",
+            _channelId, dave.Decrypted, dave.Failed, dave.Refused, string.Join(", ", _e2ee.UsersWithKeys),
+            string.Join(", ", _speakerIdentifier.KnownStreams.Select(kv => $"{kv.Key}={kv.Value}")),
+            identification.Attempts, identification.NoCandidates, identification.NoMatch,
+            string.Join(", ", GetPeopleInChannel()));
     }
 
     /// <returns>The buffered audio, or null if it's too short to be worth transcribing.</returns>

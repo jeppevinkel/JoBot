@@ -33,6 +33,9 @@ public sealed class GuardedE2EESession : IE2EESession
     private volatile IReadOnlySet<ulong> _usersWithKeys = new HashSet<ulong>();
     private ulong _botId;
     private int _disposed;
+    private int _refused;
+    private int _failed;
+    private int _decrypted;
 
     public GuardedE2EESession(ILogger<GuardedE2EESession> logger)
     {
@@ -48,8 +51,27 @@ public sealed class GuardedE2EESession : IE2EESession
     /// <summary>Whether audio from this user can currently be decrypted.</summary>
     public bool HasKeyFor(ulong userId) => _usersWithKeys.Contains(userId);
 
-    public int DecryptFrame(ulong userId, ReadOnlySpan<byte> encryptedFrame, Span<byte> decryptedFrame) =>
-        HasKeyFor(userId) ? _inner.DecryptFrame(userId, encryptedFrame, decryptedFrame) : 0;
+    /// <summary>The users whose audio can currently be decrypted.</summary>
+    public IReadOnlySet<ulong> UsersWithKeys => _usersWithKeys;
+
+    public int DecryptFrame(ulong userId, ReadOnlySpan<byte> encryptedFrame, Span<byte> decryptedFrame)
+    {
+        if (!HasKeyFor(userId))
+        {
+            Interlocked.Increment(ref _refused);
+            return 0;
+        }
+
+        var written = _inner.DecryptFrame(userId, encryptedFrame, decryptedFrame);
+        Interlocked.Increment(ref written > 0 ? ref _decrypted : ref _failed);
+        return written;
+    }
+
+    /// <summary>Returns and resets how many decryptions were refused (no key), failed and succeeded.</summary>
+    public (int Refused, int Failed, int Decrypted) TakeStats() => (
+        Interlocked.Exchange(ref _refused, 0),
+        Interlocked.Exchange(ref _failed, 0),
+        Interlocked.Exchange(ref _decrypted, 0));
 
     public void Initialize(ushort protocolVersion, ulong channelId, ulong userId, uint ssrc)
     {
@@ -105,7 +127,7 @@ public sealed class GuardedE2EESession : IE2EESession
             // The bot has no decryptor for itself
             var users = roster.Keys.Where(id => id != _botId).ToHashSet();
             _usersWithKeys = users;
-            _logger.LogDebug("DAVE roster updated: {Count} users with keys", users.Count);
+            _logger.LogInformation("DAVE keys available for {Count} users: {Users}", users.Count, string.Join(", ", users));
         }
         catch (Exception ex)
         {

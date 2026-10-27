@@ -51,6 +51,9 @@ public sealed class SpeakerIdentifier(GuardedE2EESession e2ee, ILogger<SpeakerId
     private VoiceConnection? _connection;
     private ConcurrentDictionary<uint, ulong>? _ssrcs;
     private Func<IReadOnlyCollection<ulong>>? _getPeopleInChannel;
+    private int _attempts;
+    private int _noCandidates;
+    private int _noMatch;
 
     /// <summary>Called with each transport cryptor the connection creates.</summary>
     public void SetCryptor(ICryptor cryptor) => _cryptor = cryptor;
@@ -99,16 +102,33 @@ public sealed class SpeakerIdentifier(GuardedE2EESession e2ee, ILogger<SpeakerId
         }
     }
 
+    /// <summary>Returns and resets how often identification was attempted, and why it failed.</summary>
+    public (int Attempts, int NoCandidates, int NoMatch) TakeStats() => (
+        Interlocked.Exchange(ref _attempts, 0),
+        Interlocked.Exchange(ref _noCandidates, 0),
+        Interlocked.Exchange(ref _noMatch, 0));
+
+    /// <summary>The streams the library currently knows, as SSRC → user ID.</summary>
+    public IReadOnlyDictionary<uint, ulong> KnownStreams => _ssrcs ?? new ConcurrentDictionary<uint, ulong>();
+
     private ulong? Identify(ICryptor cryptor, ReadOnlySpan<byte> packet)
     {
+        Interlocked.Increment(ref _attempts);
+
         var known = _ssrcs!.Values.ToHashSet();
         var candidates = _getPeopleInChannel!().Where(user => !known.Contains(user) && e2ee.HasKeyFor(user)).ToList();
         if (candidates.Count == 0)
+        {
+            Interlocked.Increment(ref _noCandidates);
             return null;
+        }
 
         using var transportDecrypted = new ArrayPoolBufferWriter<byte>();
         if (!cryptor.Decrypt(packet, transportDecrypted, out _))
+        {
+            Interlocked.Increment(ref _noMatch);
             return null;
+        }
 
         ReadOnlySpan<byte> frame = transportDecrypted.WrittenSpan;
         var buffer = ArrayPool<byte>.Shared.Rent(frame.Length);
@@ -127,6 +147,9 @@ public sealed class SpeakerIdentifier(GuardedE2EESession e2ee, ILogger<SpeakerId
 
                 match = candidate;
             }
+
+            if (match is null)
+                Interlocked.Increment(ref _noMatch);
 
             return match;
         }
