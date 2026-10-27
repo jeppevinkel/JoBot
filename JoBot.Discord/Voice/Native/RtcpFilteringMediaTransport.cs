@@ -6,7 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace JoBot.Discord.Voice.Native;
 
 /// <summary>
-/// Wraps the library's UDP transport to keep received RTCP packets away from it.
+/// Wraps the library's UDP transport to keep received RTCP packets away from it, and to let
+/// <see cref="SpeakerIdentifier"/> see audio packets before the library does.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,7 +21,8 @@ namespace JoBot.Discord.Voice.Native;
 /// Remove this once the library's receive loop survives packets it can't parse.
 /// </para>
 /// </remarks>
-public sealed class RtcpFilteringMediaTransport(ILogger<RtcpFilteringMediaTransport> logger) : IMediaTransportService
+public sealed class RtcpFilteringMediaTransport(SpeakerIdentifier speakerIdentifier, ILogger<RtcpFilteringMediaTransport> logger)
+    : IMediaTransportService
 {
     private const int MinRtcpSize = 4;
     private const byte FirstRtcpType = 200;
@@ -50,6 +52,8 @@ public sealed class RtcpFilteringMediaTransport(ILogger<RtcpFilteringMediaTransp
 
                 continue;
             }
+
+            speakerIdentifier.Inspect(packet);
 
             packet.CopyTo(bufferWriter.GetSpan(packet.Length));
             bufferWriter.Advance(packet.Length);

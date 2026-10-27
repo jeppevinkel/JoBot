@@ -76,8 +76,10 @@ public static class DiscordServiceExtensions
                 // Resolved from each voice connection's service scope
                 services.AddScoped<ListeningAudioReceiver>();
                 // Work around bugs in the library's receive path; see these classes
-                services.AddScoped<ICryptorFactory>(sp =>
-                    new ExtensionStrippingCryptorFactory(ActivatorUtilities.CreateInstance<DefaultCryptorFactory>(sp)));
+                services.AddScoped<SpeakerIdentifier>();
+                services.AddScoped<ICryptorFactory>(sp => new ExtensionStrippingCryptorFactory(
+                    ActivatorUtilities.CreateInstance<DefaultCryptorFactory>(sp),
+                    sp.GetRequiredService<SpeakerIdentifier>().SetCryptor));
                 services.AddScoped<IMediaTransportService, RtcpFilteringMediaTransport>();
                 services.AddSingleton<VoiceListeningService>();
                 services.AddSingleton<IUtteranceSink>(sp => sp.GetRequiredService<VoiceListeningService>());

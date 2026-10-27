@@ -2,6 +2,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
+using DSharpPlus;
+using DSharpPlus.Entities;
 using DSharpPlus.Voice;
 using DSharpPlus.Voice.Codec;
 using DSharpPlus.Voice.Receivers;
@@ -50,6 +52,8 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         typeof(VoiceConnection).GetField("receiveAudioTask", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly IAudioCodec _codec;
+    private readonly DiscordClient _discordClient;
+    private readonly SpeakerIdentifier _speakerIdentifier;
     private readonly ITranscriptionService _transcription;
     private readonly IUtteranceSink _sink;
     private readonly VoiceListeningOptions _options;
@@ -72,12 +76,16 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
 
     public ListeningAudioReceiver(
         IAudioCodec codec,
+        DiscordClient discordClient,
+        SpeakerIdentifier speakerIdentifier,
         ITranscriptionService transcription,
         IUtteranceSink sink,
         IOptions<VoiceListeningOptions> options,
         ILogger<ListeningAudioReceiver> logger)
     {
         _codec = codec;
+        _discordClient = discordClient;
+        _speakerIdentifier = speakerIdentifier;
         _transcription = transcription;
         _sink = sink;
         _options = options.Value;
@@ -100,6 +108,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         _connection = connection;
         _guildId = guildId;
         _channelId = connection.ChannelId;
+        _speakerIdentifier.Attach(connection, GetPeopleInChannel);
         _lastMetrics = VoiceMetricsSnapshot.From(connection);
         _flushTimer = new Timer(_ => FlushQuietSpeakers(), null, FlushCheckInterval, FlushCheckInterval);
         _statsTimer = new Timer(_ => LogStats(), null, StatsInterval, StatsInterval);
@@ -209,6 +218,20 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
             return id;
 
         return _ssrcs is not null && _ssrcs.TryGetValue((uint)id, out var userId) ? userId : null;
+    }
+
+    /// <summary>The users in the channel whose audio is worth listening to.</summary>
+    private IReadOnlyCollection<ulong> GetPeopleInChannel()
+    {
+        if (!_discordClient.Guilds.TryGetValue(_guildId, out DiscordGuild? guild))
+            return [];
+
+        var botId = _discordClient.CurrentUser.Id;
+        return guild.VoiceStates.Values
+            .Where(state => state.ChannelId == _channelId && state.UserId != botId)
+            .Select(state => state.UserId)
+            .Where(userId => _sink.ShouldListenTo(_guildId, userId))
+            .ToList();
     }
 
     private void FlushQuietSpeakers()

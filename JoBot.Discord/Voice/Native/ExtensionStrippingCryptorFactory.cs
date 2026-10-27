@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using CommunityToolkit.HighPerformance.Buffers;
 using DSharpPlus.Voice.Cryptors;
 using DSharpPlus.Voice.Protocol.RTP;
@@ -18,15 +18,20 @@ namespace JoBot.Discord.Voice.Native;
 /// Remove this once the library strips the extension itself, otherwise audio would be cut twice.
 /// </para>
 /// </remarks>
-public sealed class ExtensionStrippingCryptorFactory(ICryptorFactory inner) : ICryptorFactory
+/// <param name="onCreated">Called with each cryptor created, e.g. so others can decrypt received packets too.</param>
+public sealed class ExtensionStrippingCryptorFactory(ICryptorFactory inner, Action<ICryptor>? onCreated = null) : ICryptorFactory
 {
     public IReadOnlyList<string> SupportedEncryptionModes => inner.SupportedEncryptionModes;
 
     public string SelectPreferredEncryptionMode(params IEnumerable<string> supportedEncryptionModes) =>
         inner.SelectPreferredEncryptionMode(supportedEncryptionModes);
 
-    public ICryptor CreateCryptor(string selectedEncryptionMode, byte[] key) =>
-        new ExtensionStrippingCryptor(inner.CreateCryptor(selectedEncryptionMode, key));
+    public ICryptor CreateCryptor(string selectedEncryptionMode, byte[] key)
+    {
+        var cryptor = new ExtensionStrippingCryptor(inner.CreateCryptor(selectedEncryptionMode, key));
+        onCreated?.Invoke(cryptor);
+        return cryptor;
+    }
 
     private sealed class ExtensionStrippingCryptor(ICryptor inner) : ICryptor
     {
