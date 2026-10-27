@@ -116,6 +116,12 @@ volumes:
   hf-hub-cache:
 ```
 
+Older speaches images ignore `PRELOAD_MODELS`; if the bot logs `Model '…' is not installed locally`, download it once (it's kept in the volume):
+
+```bash
+curl -X POST http://localhost:8000/v1/models/deepdml/faster-whisper-large-v3-turbo-ct2
+```
+
 ### Bot configuration
 
 ```yaml
