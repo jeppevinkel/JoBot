@@ -78,6 +78,16 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
     /// <summary>False once the playback loop has stopped, e.g. after an unrecoverable error.</summary>
     public bool IsAlive => !_loopTask.IsCompleted;
 
+    /// <summary>Whether TTS is playing or queued.</summary>
+    public bool HasPendingSpeech
+    {
+        get
+        {
+            lock (_sync)
+                return _playingTts || _ttsQueue.Count > 0;
+        }
+    }
+
     public bool IsPlaying
     {
         get
@@ -136,6 +146,19 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
         {
             AdvanceLocked();
             // Skipping implies the user wants to hear the next track
+            _paused = false;
+        }
+
+        Wake();
+    }
+
+    /// <summary>Stops the music and clears the queue, but lets TTS finish.</summary>
+    public void StopMusic()
+    {
+        lock (_sync)
+        {
+            _queue.Clear();
+            SetCurrentLocked(null);
             _paused = false;
         }
 

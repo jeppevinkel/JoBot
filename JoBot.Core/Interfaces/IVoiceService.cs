@@ -5,7 +5,20 @@ namespace JoBot.Core.Interfaces;
 public interface IVoiceService
 {
     Task<bool> JoinVoiceChannelAsync(ulong guildId, ulong channelId);
+
+    /// <summary>
+    /// Leaves the guild's voice channel. Music stops straight away, but where the backend supports it, leaving
+    /// waits until queued speech has finished and no <see cref="DeferLeaving"/> handles are held, so a goodbye
+    /// isn't cut off.
+    /// </summary>
     Task LeaveVoiceChannelAsync(ulong guildId);
+
+    /// <summary>
+    /// Keeps the bot in the guild's voice channel until the returned handle is disposed, even if asked to leave in
+    /// the meantime. Hold it while answering someone, so a reply that's still being generated can be spoken.
+    /// Backends that can't defer leaving return a handle that does nothing.
+    /// </summary>
+    IDisposable DeferLeaving(ulong guildId);
     Task<bool> PlayAsync(ulong guildId, string streamUrl);
     Task<bool> PlayTtsAsync(ulong guildId, string ttsUrl);
     Task StopAsync(ulong guildId);

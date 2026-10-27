@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Threading.Channels;
 using DSharpPlus;
 using DSharpPlus.Entities;
@@ -145,6 +145,9 @@ public class VoiceListeningService : BackgroundService, IUtteranceSink
         bool addressedByName,
         CancellationToken stoppingToken)
     {
+        // If the AI decides to leave while answering, let the answer be spoken first
+        using IDisposable leaveHold = _voiceService.DeferLeaving(guild.Id);
+
         try
         {
             DiscordUser user = await _discordClient.GetUserAsync(userId);
