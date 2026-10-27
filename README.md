@@ -141,9 +141,9 @@ curl -X POST http://localhost:8000/v1/models/deepdml/faster-whisper-large-v3-tur
 
 Setting `Transcription__Language` is worth it if everyone speaks the same language: detecting the language on short utterances is unreliable. The bot needs permission to send messages in the voice channel for posting replies and transcripts.
 
-When the bot joins a channel with listening enabled, it logs `Listening in voice channel …`, and `Receiving audio from user …` the first time it hears each person. While people talk, it logs a summary once a minute of how many audio frames arrived, how many failed decryption or decoding, and how many utterances were sent for transcription, which shows where things break down if it doesn't react.
+When the bot joins a channel with listening enabled, it logs `Listening in voice channel …`, and each time someone addresses it, `User … spoke to the bot: …` with the transcript.
 
-To see everything the bot hears, set `Serilog__MinimumLevel__Override__JoBot.Discord.Voice.Listening=Debug`.
+If it doesn't react, set `Serilog__MinimumLevel__Override__JoBot.Discord.Voice=Debug`. It then also logs everything it hears, which DAVE (end-to-end encryption) keys it has, which users it has identified as speaking, and once a minute while people talk, a summary of how many audio frames arrived, how many failed decryption or decoding, and how many utterances were sent for transcription. That shows where things break down.
 
 ## Database Migrations
 

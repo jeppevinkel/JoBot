@@ -177,7 +177,7 @@ public sealed class GuardedE2EESession : IE2EESession
             // The bot has no decryptor for itself
             var users = roster.Keys.Where(id => id != _botId).ToHashSet();
             _usersWithKeys = users;
-            _logger.LogInformation("DAVE keys available for {Count} users: {Users}", users.Count, string.Join(", ", users));
+            _logger.LogDebug("DAVE keys available for {Count} users: {Users}", users.Count, string.Join(", ", users));
         }
         catch (Exception ex)
         {

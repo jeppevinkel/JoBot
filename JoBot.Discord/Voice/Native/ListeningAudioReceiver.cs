@@ -150,7 +150,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         if (!_speakers.TryGetValue(userId, out Speaker? speaker))
         {
             speaker = _speakers.GetOrAdd(userId, _ => new Speaker());
-            _logger.LogInformation("Receiving audio from user {UserId} in voice channel {ChannelId}", userId, _channelId);
+            _logger.LogDebug("Receiving audio from user {UserId} in voice channel {ChannelId}", userId, _channelId);
         }
 
         Utterance? completed = null;
@@ -263,7 +263,10 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         _sink.Submit(utterance);
     }
 
-    /// <summary>Logs what happened to received audio, to make it possible to tell where listening breaks down.</summary>
+    /// <summary>
+    /// Logs (at debug level) what happened to received audio, to make it possible to tell where listening breaks down,
+    /// and reports if the library's receive loop has died.
+    /// </summary>
     private void LogStats()
     {
         if (_connection is null || _disposed)
@@ -295,10 +298,10 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         var identification = _speakerIdentifier.TakeStats();
 
         // Stay quiet while nobody talks
-        if (delta.FramesReceived == 0 && stats.Packets == 0)
+        if ((delta.FramesReceived == 0 && stats.Packets == 0) || !_logger.IsEnabled(LogLevel.Debug))
             return;
 
-        _logger.LogInformation(
+        _logger.LogDebug(
             "Voice receive in channel {ChannelId} over the last {Interval}: {FramesReceived} frames from Discord, " +
             "{FailedDecryption} failed decryption, {Dropped} dropped (sent or received); " +
             "{Packets} reached the receiver, {Unavailable} skipped while transcription was unavailable, " +
@@ -308,7 +311,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
             stats.Packets, stats.TranscriptionUnavailable, stats.UnknownSpeaker, stats.Ignored, stats.DecodeFailures,
             stats.Utterances);
 
-        _logger.LogInformation(
+        _logger.LogDebug(
             "Voice receive details in channel {ChannelId}: DAVE decryption {Decrypted} succeeded, {DaveFailed} failed, " +
             "{Refused} refused for users without keys (keys for: {UsersWithKeys}); known streams: {KnownStreams}; " +
             "identifying unknown streams: {Attempts} attempts, {NoCandidates} without candidates, {NoMatch} without a match; " +

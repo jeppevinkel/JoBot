@@ -161,7 +161,7 @@ public sealed class SpeakerIdentifier(GuardedE2EESession e2ee, ILogger<SpeakerId
 
     private void Register(uint ssrc, ulong userId)
     {
-        logger.LogInformation("Identified audio stream {Ssrc} as user {UserId}", ssrc, userId);
+        logger.LogDebug("Identified audio stream {Ssrc} as user {UserId}", ssrc, userId);
         _lastAttempt.TryRemove(ssrc, out _);
 
         // Completes synchronously with our receiver; observe it anyway so failures are logged
