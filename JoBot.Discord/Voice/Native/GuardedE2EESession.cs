@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace JoBot.Discord.Voice.Native;
 
 /// <summary>
-/// Wraps the library's DAVE session so decrypting audio from a user it has no key for fails instead of crashing.
+/// Wraps the library's DAVE session to work around bugs that make received audio impossible to decrypt.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,6 +18,13 @@ namespace JoBot.Discord.Voice.Native;
 /// <para>
 /// Decryptors exist exactly for the users in the group's roster, so the roster is read after every change to the
 /// group and decryption is refused for anyone not on it.
+/// </para>
+/// <para>
+/// DSharpPlus.Voice (nightly 02613) also resets the session on every DAVE "execute transition", which is how Discord
+/// says to start using the keys just received. That throws away everyone's keys moments after joining, so nothing can
+/// be decrypted for the rest of the call. Legitimate resets (a new group, or recovering from a bad commit) are always
+/// followed by announcing a new key package, so a reset to the same protocol version is held back until that happens,
+/// and discarded if any other group event comes first.
 /// </para>
 /// </remarks>
 public sealed class GuardedE2EESession : IE2EESession
@@ -32,6 +39,8 @@ public sealed class GuardedE2EESession : IE2EESession
     private readonly ILogger<GuardedE2EESession> _logger;
     private volatile IReadOnlySet<ulong> _usersWithKeys = new HashSet<ulong>();
     private ulong _botId;
+    private ushort _protocolVersion;
+    private ushort? _pendingReset;
     private int _disposed;
     private int _refused;
     private int _failed;
@@ -76,18 +85,36 @@ public sealed class GuardedE2EESession : IE2EESession
     public void Initialize(ushort protocolVersion, ulong channelId, ulong userId, uint ssrc)
     {
         _botId = userId;
+        _protocolVersion = protocolVersion;
+        _pendingReset = null;
         _inner.Initialize(protocolVersion, channelId, userId, ssrc);
         RefreshRoster();
     }
 
     public void ReinitializeE2EESession(ushort protocolVersion)
     {
-        _inner.ReinitializeE2EESession(protocolVersion);
-        RefreshRoster();
+        if (protocolVersion == _protocolVersion)
+        {
+            // Possibly the library's bogus reset on "execute transition"; decide once we see what comes next
+            _pendingReset = protocolVersion;
+            return;
+        }
+
+        Reset(protocolVersion);
+    }
+
+    public void WriteKeyPackage(ArrayPoolBufferWriter<byte> writer)
+    {
+        // Announcing a key package means joining a group afresh, which is when a reset is genuinely needed
+        if (_pendingReset is { } protocolVersion)
+            Reset(protocolVersion);
+
+        _inner.WriteKeyPackage(writer);
     }
 
     public bool ProcessCommit(ReadOnlySpan<byte> payload)
     {
+        DiscardPendingReset();
         var result = _inner.ProcessCommit(payload);
         RefreshRoster();
         return result;
@@ -95,21 +122,44 @@ public sealed class GuardedE2EESession : IE2EESession
 
     public void ProcessWelcome(ReadOnlySpan<byte> payload, ReadOnlySpan<ulong> roster)
     {
+        DiscardPendingReset();
         _inner.ProcessWelcome(payload, roster);
         RefreshRoster();
     }
 
-    public byte[] ProcessProposals(ReadOnlySpan<byte> payload, ReadOnlySpan<ulong> roster) =>
-        _inner.ProcessProposals(payload, roster);
+    public byte[] ProcessProposals(ReadOnlySpan<byte> payload, ReadOnlySpan<ulong> roster)
+    {
+        DiscardPendingReset();
+        return _inner.ProcessProposals(payload, roster);
+    }
 
-    public void SetExternalSender(ReadOnlySpan<byte> payload) => _inner.SetExternalSender(payload);
+    public void SetExternalSender(ReadOnlySpan<byte> payload)
+    {
+        DiscardPendingReset();
+        _inner.SetExternalSender(payload);
+    }
 
     public bool TryEncryptFrame(ReadOnlySpan<byte> unencryptedFrame, ArrayPoolBufferWriter<byte> encryptedFrame) =>
         _inner.TryEncryptFrame(unencryptedFrame, encryptedFrame);
 
     public int GetMaxEncryptedLength(int unencryptedLength) => _inner.GetMaxEncryptedLength(unencryptedLength);
 
-    public void WriteKeyPackage(ArrayPoolBufferWriter<byte> writer) => _inner.WriteKeyPackage(writer);
+    private void Reset(ushort protocolVersion)
+    {
+        _pendingReset = null;
+        _protocolVersion = protocolVersion;
+        _inner.ReinitializeE2EESession(protocolVersion);
+        RefreshRoster();
+    }
+
+    private void DiscardPendingReset()
+    {
+        if (_pendingReset is null)
+            return;
+
+        _pendingReset = null;
+        _logger.LogDebug("Ignored a DAVE session reset that would have discarded everyone's keys");
+    }
 
     /// <remarks>
     /// Only called from the voice gateway's event loop, right after the group changed on that same thread, so the
