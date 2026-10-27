@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
@@ -39,6 +39,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private static readonly TimeSpan MinGapToFill = TimeSpan.FromMilliseconds(40);
     private static readonly TimeSpan MaxFilledGap = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan FlushCheckInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan StatsInterval = TimeSpan.FromMinutes(1);
 
     // The library keeps the SSRC -> user ID map private; see ResolveUserId
     private static readonly FieldInfo? SsrcsField =
@@ -56,7 +57,11 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
     private ConcurrentDictionary<uint, ulong>? _ssrcs;
     private ulong _guildId;
     private ulong _channelId;
+    private VoiceConnection? _connection;
     private Timer? _flushTimer;
+    private Timer? _statsTimer;
+    private ReceiveStats _stats;
+    private VoiceMetricsSnapshot _lastMetrics;
     private volatile bool _attached;
     private volatile bool _disposed;
 
@@ -87,25 +92,52 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
                 "once the library reports user IDs to audio receivers");
         }
 
+        _connection = connection;
         _guildId = guildId;
         _channelId = connection.ChannelId;
+        _lastMetrics = VoiceMetricsSnapshot.From(connection);
         _flushTimer = new Timer(_ => FlushQuietSpeakers(), null, FlushCheckInterval, FlushCheckInterval);
+        _statsTimer = new Timer(_ => LogStats(), null, StatsInterval, StatsInterval);
         _attached = true;
+
+        _logger.LogInformation("Listening in voice channel {ChannelId} in guild {GuildId}", _channelId, guildId);
     }
 
     protected override Task ProcessAudioAsync(ulong speakingUserId, uint sequence, AudioTimestamp timestamp, TimeSpan duration, byte[] audio)
     {
-        if (!_attached || _disposed || !_transcription.IsAvailable)
+        if (!_attached || _disposed)
             return Task.CompletedTask;
 
-        if (ResolveUserId(speakingUserId) is not { } userId || !_sink.ShouldListenTo(_guildId, userId))
+        Interlocked.Increment(ref _stats.Packets);
+
+        if (!_transcription.IsAvailable)
+        {
+            Interlocked.Increment(ref _stats.TranscriptionUnavailable);
             return Task.CompletedTask;
+        }
+
+        if (ResolveUserId(speakingUserId) is not { } userId)
+        {
+            Interlocked.Increment(ref _stats.UnknownSpeaker);
+            return Task.CompletedTask;
+        }
+
+        if (!_sink.ShouldListenTo(_guildId, userId))
+        {
+            Interlocked.Increment(ref _stats.Ignored);
+            return Task.CompletedTask;
+        }
 
         // Pauses are detected from packets stopping, so silence frames carry no information
         if (audio.AsSpan().SequenceEqual(OpusSilenceFrame))
             return Task.CompletedTask;
 
-        Speaker speaker = _speakers.GetOrAdd(userId, _ => new Speaker(_codec.CreateDecoder()));
+        if (!_speakers.TryGetValue(userId, out Speaker? speaker))
+        {
+            speaker = _speakers.GetOrAdd(userId, _ => new Speaker(_codec.CreateDecoder()));
+            _logger.LogInformation("Receiving audio from user {UserId} in voice channel {ChannelId}", userId, _channelId);
+        }
+
         Utterance? completed = null;
 
         lock (speaker)
@@ -128,7 +160,8 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
             catch (Exception ex)
             {
                 // A corrupt packet shouldn't take down the receive loop
-                _logger.LogDebug(ex, "Failed to decode audio from user {UserId}", userId);
+                if (Interlocked.Increment(ref _stats.DecodeFailures) == 1)
+                    _logger.LogWarning(ex, "Failed to decode audio from user {UserId}", userId);
                 return Task.CompletedTask;
             }
 
@@ -138,9 +171,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
                 completed = TakeUtterance(userId, speaker);
         }
 
-        if (completed is not null)
-            _sink.Submit(completed);
-
+        Submit(completed);
         return Task.CompletedTask;
     }
 
@@ -190,9 +221,53 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
                     completed = TakeUtterance(userId, speaker);
             }
 
-            if (completed is not null)
-                _sink.Submit(completed);
+            Submit(completed);
         }
+    }
+
+    private void Submit(Utterance? utterance)
+    {
+        if (utterance is null)
+            return;
+
+        Interlocked.Increment(ref _stats.Utterances);
+        _sink.Submit(utterance);
+    }
+
+    /// <summary>Logs what happened to received audio, to make it possible to tell where listening breaks down.</summary>
+    private void LogStats()
+    {
+        if (_connection is null || _disposed)
+            return;
+
+        VoiceMetricsSnapshot metrics;
+        try
+        {
+            metrics = VoiceMetricsSnapshot.From(_connection);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not read voice metrics");
+            return;
+        }
+
+        VoiceMetricsSnapshot delta = metrics - _lastMetrics;
+        _lastMetrics = metrics;
+        ReceiveStats stats = ReceiveStats.TakeFrom(ref _stats);
+
+        // Stay quiet while nobody talks
+        if (delta.FramesReceived == 0 && stats.Packets == 0)
+            return;
+
+        _logger.LogInformation(
+            "Voice receive in channel {ChannelId} over the last {Interval}: {FramesReceived} frames from Discord, " +
+            "{FailedDecryption} failed decryption, {Dropped} dropped (sent or received); " +
+            "{Packets} reached the receiver, {Unavailable} skipped while transcription was unavailable, " +
+            "{UnknownSpeaker} from unknown speakers, {Ignored} from ignored users (bots), {DecodeFailures} failed to decode; " +
+            "{Utterances} utterances sent for transcription",
+            _channelId, StatsInterval, delta.FramesReceived, delta.FailedDecryption, delta.Dropped,
+            stats.Packets, stats.TranscriptionUnavailable, stats.UnknownSpeaker, stats.Ignored, stats.DecodeFailures,
+            stats.Utterances);
     }
 
     /// <returns>The buffered audio, or null if it's too short to be worth transcribing.</returns>
@@ -211,6 +286,7 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
 
         _disposed = true;
         _flushTimer?.Dispose();
+        _statsTimer?.Dispose();
 
         foreach (Speaker speaker in _speakers.Values)
         {
@@ -219,6 +295,39 @@ public sealed class ListeningAudioReceiver : AudioReceiver, IDisposable
         }
 
         _speakers.Clear();
+    }
+
+    private struct ReceiveStats
+    {
+        public int Packets;
+        public int TranscriptionUnavailable;
+        public int UnknownSpeaker;
+        public int Ignored;
+        public int DecodeFailures;
+        public int Utterances;
+
+        public static ReceiveStats TakeFrom(ref ReceiveStats stats) => new()
+        {
+            Packets = Interlocked.Exchange(ref stats.Packets, 0),
+            TranscriptionUnavailable = Interlocked.Exchange(ref stats.TranscriptionUnavailable, 0),
+            UnknownSpeaker = Interlocked.Exchange(ref stats.UnknownSpeaker, 0),
+            Ignored = Interlocked.Exchange(ref stats.Ignored, 0),
+            DecodeFailures = Interlocked.Exchange(ref stats.DecodeFailures, 0),
+            Utterances = Interlocked.Exchange(ref stats.Utterances, 0)
+        };
+    }
+
+    /// <summary>The receive side of the library's (cumulative) voice metrics.</summary>
+    private readonly record struct VoiceMetricsSnapshot(int FramesReceived, int FailedDecryption, int Dropped)
+    {
+        public static VoiceMetricsSnapshot From(VoiceConnection connection)
+        {
+            var metrics = connection.GetVoiceMetrics();
+            return new VoiceMetricsSnapshot(metrics.AudioFramesReceived, metrics.AudioFramesFailedDecryption, metrics.AudioFramesDropped);
+        }
+
+        public static VoiceMetricsSnapshot operator -(VoiceMetricsSnapshot a, VoiceMetricsSnapshot b) =>
+            new(a.FramesReceived - b.FramesReceived, a.FailedDecryption - b.FailedDecryption, a.Dropped - b.Dropped);
     }
 
     /// <summary>One user's decoder and the mono audio buffered since their last pause.</summary>
