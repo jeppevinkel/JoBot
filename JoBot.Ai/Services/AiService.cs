@@ -61,104 +61,157 @@ public class AiService : IAiService
         {
             await history.EnsureInitializedAsync();
 
-            GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
-
             if (history.IsFirstAfterReboot)
                 payload = payload with { IsFirstAfterReboot = true };
 
             await history.AddAsync(new Message(RoleType.User,
                 JsonSerializer.Serialize(payload, JsonOptions)));
 
-            var parameters = new MessageParameters
-            {
-                Messages = history.Messages.ToList(),
-                MaxTokens = _options.MaxTokens,
-                Temperature = settings.AiTemperature,
-                Model = _options.Model,
-                Tools = _toolFactory.Tools.ToList(),
-                Stream = false,
-                System = [new SystemMessage(settings.SystemPrompt)]
-            };
+            await foreach (AiAction action in RunTurnAsync(
+                               guildId, () => history.Messages, history.AddAsync, cancellationToken))
+                yield return action;
+        }
+        finally
+        {
+            history.Lock.Release();
+        }
+    }
 
-            ApiCallResult result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
-            MessageResponse response;
-            if (result is not ApiCallSuccess { Response: var claudeResponse })
+    public async IAsyncEnumerable<AiAction> ProcessEventAsync(
+        ulong guildId,
+        Func<CancellationToken, Task<AutomatedEventPayload?>> buildPayload,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        GuildConversationHistory history = GetGuildHistory(guildId);
+
+        await history.Lock.WaitAsync(cancellationToken);
+        try
+        {
+            AutomatedEventPayload? payload = await buildPayload(cancellationToken);
+            if (payload is null)
+                yield break;
+
+            _logger.LogInformation("Received automated event:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
+
+            await history.EnsureInitializedAsync();
+
+            // Work on a copy so the event never reaches the stored conversation
+            List<Message> messages = history.Messages.ToList();
+            messages.Add(new Message(RoleType.User, JsonSerializer.Serialize(payload, JsonOptions)));
+
+            await foreach (AiAction action in RunTurnAsync(
+                               guildId,
+                               () => messages,
+                               message =>
+                               {
+                                   messages.Add(message);
+                                   return Task.CompletedTask;
+                               },
+                               cancellationToken))
+                yield return action;
+        }
+        finally
+        {
+            history.Lock.Release();
+        }
+    }
+
+    /// <summary>Gets Claude's answer to the last message, running tools until it's done.</summary>
+    /// <param name="getMessages">The conversation so far, ending with the message to answer.</param>
+    /// <param name="addMessage">Appends Claude's responses and tool results to the conversation.</param>
+    private async IAsyncEnumerable<AiAction> RunTurnAsync(
+        ulong guildId,
+        Func<IReadOnlyList<Message>> getMessages,
+        Func<Message, Task> addMessage,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
+
+        var parameters = new MessageParameters
+        {
+            Messages = getMessages().ToList(),
+            MaxTokens = _options.MaxTokens,
+            Temperature = settings.AiTemperature,
+            Model = _options.Model,
+            Tools = _toolFactory.Tools.ToList(),
+            Stream = false,
+            System = [new SystemMessage(settings.SystemPrompt)]
+        };
+
+        ApiCallResult result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
+        MessageResponse response;
+        if (result is not ApiCallSuccess { Response: var claudeResponse })
+        {
+            // Compiler knows this must be ApiCallError
+            yield return ((ApiCallError)result).Error;
+            yield break;
+        }
+        response = claudeResponse;
+
+        if (response.Message is null)
+        {
+            yield return new IgnoreAction();
+            yield break;
+        }
+
+        await addMessage(response.Message);
+
+        var toolIterations = 0;
+        while (response.ToolCalls?.Count > 0 && toolIterations < _options.MaxToolIterations)
+        {
+            toolIterations++;
+
+            // Yield any text Claude produced alongside the tool calls
+            var textContent = response.Message?.Content
+                .OfType<TextContent>()
+                .FirstOrDefault()?.Text;
+
+            if (!string.IsNullOrWhiteSpace(textContent))
+                yield return new RespondAction { Content = textContent };
+
+            foreach (Function? toolCall in response.ToolCalls)
+            {
+                try
+                {
+                    var toolResult = await _toolFactory.InvokeAsync(
+                        toolCall.Name,
+                        toolCall.Arguments);
+                    _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, toolResult);
+                    await addMessage(new Message(toolCall, toolResult));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error invoking tool call {ToolName}", toolCall.Name);
+                    await addMessage(new Message(toolCall, ex.ToString()));
+                }
+            }
+
+            parameters.Messages = getMessages().ToList();
+            result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
+            if (result is not ApiCallSuccess { Response: var secondClaudeResponse })
             {
                 // Compiler knows this must be ApiCallError
                 yield return ((ApiCallError)result).Error;
                 yield break;
             }
-            response = claudeResponse;
 
-            if (response.Message is null)
-            {
-                yield return new IgnoreAction();
-                yield break;
-            }
-
-            await history.AddAsync(response.Message);
-
-            var toolIterations = 0;
-            while (response.ToolCalls?.Count > 0 && toolIterations < _options.MaxToolIterations)
-            {
-                toolIterations++;
-
-                // Yield any text Claude produced alongside the tool calls
-                var textContent = response.Message?.Content
-                    .OfType<TextContent>()
-                    .FirstOrDefault()?.Text;
-
-                if (!string.IsNullOrWhiteSpace(textContent))
-                    yield return new RespondAction { Content = textContent };
-
-                foreach (Function? toolCall in response.ToolCalls)
-                {
-                    try
-                    {
-                        var toolResult = await _toolFactory.InvokeAsync(
-                            toolCall.Name,
-                            toolCall.Arguments);
-                        _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, toolResult);
-                        await history.AddAsync(new Message(toolCall, toolResult));
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error invoking tool call {ToolName}", toolCall.Name);
-                        await history.AddAsync(new Message(toolCall, ex.ToString()));
-                    }
-                }
-
-                parameters.Messages = history.Messages.ToList();
-                result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
-                if (result is not ApiCallSuccess { Response: var secondClaudeResponse })
-                {
-                    // Compiler knows this must be ApiCallError
-                    yield return ((ApiCallError)result).Error;
-                    yield break;
-                }
-
-                response = secondClaudeResponse;
-
-                if (response.Message is not null)
-                    await history.AddAsync(response.Message);
-            }
-
-            if (toolIterations >= _options.MaxToolIterations)
-                _logger.LogWarning("Max tool iterations ({Max}) reached for guild {GuildId}",
-                    _options.MaxToolIterations, guildId);
+            response = secondClaudeResponse;
 
             if (response.Message is not null)
-            {
-                yield return new RespondAction { Content = response.Message };
-            }
-            else
-            {
-                yield return new IgnoreAction();
-            }
+                await addMessage(response.Message);
         }
-        finally
+
+        if (toolIterations >= _options.MaxToolIterations)
+            _logger.LogWarning("Max tool iterations ({Max}) reached for guild {GuildId}",
+                _options.MaxToolIterations, guildId);
+
+        if (response.Message is not null)
         {
-            history.Lock.Release();
+            yield return new RespondAction { Content = response.Message };
+        }
+        else
+        {
+            yield return new IgnoreAction();
         }
     }
 
