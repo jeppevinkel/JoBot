@@ -23,12 +23,12 @@ public class VoiceTools : IToolProvider
         return success ? ToolResult.Success("Joined voice channel.") : ToolResult.Failure("Failed to join voice channel.");
     }
 
-    [AiTool("Leave the current voice channel")]
+    [AiTool("Leave the current voice channel. Music stops right away; anything you say before or after this is still spoken before leaving")]
     public async Task<string> LeaveVoiceChannelAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
         await _voiceService.LeaveVoiceChannelAsync(guildId);
-        return ToolResult.Success("Left voice channel.");
+        return ToolResult.Success("Leaving the voice channel once any speech has finished.");
     }
 
     // [AiTool("Play audio from a stream URL in the currently connected voice channel")]

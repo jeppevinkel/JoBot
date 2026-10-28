@@ -5,6 +5,7 @@ using DSharpPlus.Entities;
 using DSharpPlus.Voice;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
+using JoBot.Discord.Voice.Listening;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,21 +22,30 @@ public class NativeVoiceService : IVoiceService
     private readonly DiscordClient _discordClient;
     private readonly IGuildSettingsService _settingsService;
     private readonly VoiceBackendOptions _options;
+    private readonly VoiceListeningOptions _listeningOptions;
     private readonly ConcurrentDictionary<ulong, NativeGuildPlayer> _players = new();
     private readonly ConcurrentDictionary<ulong, SemaphoreSlim> _connectionLocks = new();
+    private readonly ConcurrentDictionary<ulong, int> _leaveHolds = new();
+    private readonly ConcurrentDictionary<ulong, CancellationTokenSource> _pendingLeaves = new();
+
+    // Leave anyway after this long, in case speech or an answer gets stuck
+    private static readonly TimeSpan MaxLeaveDelay = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan LeaveCheckInterval = TimeSpan.FromMilliseconds(250);
 
     public NativeVoiceService(
         ILogger<NativeVoiceService> logger,
         ILogger<NativeGuildPlayer> playerLogger,
         DiscordClient discordClient,
         IGuildSettingsService settingsService,
-        IOptions<VoiceBackendOptions> options)
+        IOptions<VoiceBackendOptions> options,
+        IOptions<VoiceListeningOptions> listeningOptions)
     {
         _logger = logger;
         _playerLogger = playerLogger;
         _discordClient = discordClient;
         _settingsService = settingsService;
         _options = options.Value;
+        _listeningOptions = listeningOptions.Value;
     }
 
     public async Task<bool> JoinVoiceChannelAsync(ulong guildId, ulong channelId)
@@ -44,6 +54,10 @@ public class NativeVoiceService : IVoiceService
         await connectionLock.WaitAsync();
         try
         {
+            // Asked to join again before a pending leave went through: stay
+            if (_pendingLeaves.TryRemove(guildId, out CancellationTokenSource? pendingLeave))
+                await pendingLeave.CancelAsync();
+
             if (_players.TryGetValue(guildId, out NativeGuildPlayer? existing))
             {
                 if (existing.IsAlive && existing.ChannelId == channelId)
@@ -70,10 +84,15 @@ public class NativeVoiceService : IVoiceService
 
             GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
 
-            VoiceConnection connection = await channel.ConnectAsync(options: new VoiceConnectionOptions
-            {
-                AudioType = AudioType.Music
-            });
+            VoiceConnection connection = await channel.ConnectAsync(
+                receiverType: _listeningOptions.Enabled ? typeof(ListeningAudioReceiver) : null,
+                options: new VoiceConnectionOptions
+                {
+                    AudioType = AudioType.Music
+                });
+
+            if (connection.Receiver is ListeningAudioReceiver receiver)
+                receiver.Attach(connection, guildId);
 
             var player = new NativeGuildPlayer(connection, settings.MusicVolume, _options.FfmpegPath, _playerLogger);
             connection.SetDisconnectHandler(HandleDisconnectAsync, (guildId, player));
@@ -93,21 +112,75 @@ public class NativeVoiceService : IVoiceService
         }
     }
 
-    public async Task LeaveVoiceChannelAsync(ulong guildId)
+    public Task LeaveVoiceChannelAsync(ulong guildId)
     {
-        SemaphoreSlim connectionLock = _connectionLocks.GetOrAdd(guildId, static _ => new SemaphoreSlim(1, 1));
-        await connectionLock.WaitAsync();
+        if (!_players.TryGetValue(guildId, out NativeGuildPlayer? player))
+            return Task.CompletedTask;
+
+        // Leaving means the music should stop now; only speech gets to finish
+        player.StopMusic();
+
+        var pendingLeave = new CancellationTokenSource();
+        if (_pendingLeaves.TryAdd(guildId, pendingLeave))
+            _ = LeaveWhenQuietAsync(guildId, player, pendingLeave);
+
+        return Task.CompletedTask;
+    }
+
+    public IDisposable DeferLeaving(ulong guildId)
+    {
+        _leaveHolds.AddOrUpdate(guildId, 1, static (_, holds) => holds + 1);
+        return new LeaveHold(this, guildId);
+    }
+
+    private async Task LeaveWhenQuietAsync(ulong guildId, NativeGuildPlayer player, CancellationTokenSource pendingLeave)
+    {
         try
         {
-            if (_players.TryRemove(guildId, out NativeGuildPlayer? player))
+            DateTimeOffset deadline = DateTimeOffset.UtcNow + MaxLeaveDelay;
+            while (DateTimeOffset.UtcNow < deadline &&
+                   (_leaveHolds.GetValueOrDefault(guildId) > 0 || player.HasPendingSpeech))
+                await Task.Delay(LeaveCheckInterval, pendingLeave.Token);
+
+            SemaphoreSlim connectionLock = _connectionLocks.GetOrAdd(guildId, static _ => new SemaphoreSlim(1, 1));
+            await connectionLock.WaitAsync(pendingLeave.Token);
+            try
             {
-                await player.DisposeAsync();
-                _logger.LogInformation("Left voice channel in guild {GuildId}", guildId);
+                // Only leave with this exact player; it may have been replaced or disconnected meanwhile
+                if (!pendingLeave.IsCancellationRequested && _players.TryRemove(KeyValuePair.Create(guildId, player)))
+                {
+                    await player.DisposeAsync();
+                    _logger.LogInformation("Left voice channel in guild {GuildId}", guildId);
+                }
             }
+            finally
+            {
+                connectionLock.Release();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Asked to join again
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error leaving voice channel in guild {GuildId}", guildId);
         }
         finally
         {
-            connectionLock.Release();
+            // Not disposed: a join may cancel it concurrently, and it holds no timers
+            _pendingLeaves.TryRemove(KeyValuePair.Create(guildId, pendingLeave));
+        }
+    }
+
+    private sealed class LeaveHold(NativeVoiceService service, ulong guildId) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                service._leaveHolds.AddOrUpdate(guildId, 0, static (_, holds) => Math.Max(0, holds - 1));
         }
     }
 

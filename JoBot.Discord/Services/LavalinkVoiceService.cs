@@ -62,6 +62,18 @@ public class LavalinkVoiceService : IVoiceService
         }
     }
 
+    /// <summary>Lavalink leaves straight away, so this does nothing.</summary>
+    public IDisposable DeferLeaving(ulong guildId) => NoLeaveHold.Instance;
+
+    private sealed class NoLeaveHold : IDisposable
+    {
+        public static readonly NoLeaveHold Instance = new();
+
+        public void Dispose()
+        {
+        }
+    }
+
     public async Task LeaveVoiceChannelAsync(ulong guildId)
     {
         try

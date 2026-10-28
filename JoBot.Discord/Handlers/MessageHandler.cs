@@ -14,12 +14,18 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
     private readonly ILogger<MessageHandler> _logger;
     private readonly IMessagePayloadBuilder _payloadBuilder;
     private readonly IAiService _aiService;
+    private readonly IVoiceService _voiceService;
 
-    public MessageHandler(ILogger<MessageHandler> logger, IMessagePayloadBuilder payloadBuilder, IAiService aiService)
+    public MessageHandler(
+        ILogger<MessageHandler> logger,
+        IMessagePayloadBuilder payloadBuilder,
+        IAiService aiService,
+        IVoiceService voiceService)
     {
         _logger = logger;
         _payloadBuilder = payloadBuilder;
         _aiService = aiService;
+        _voiceService = voiceService;
     }
 
     public async Task HandleEventAsync(DiscordClient client, MessageCreatedEventArgs eventArgs)
@@ -39,6 +45,9 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
         }
 
         MessagePayload payload = await _payloadBuilder.BuildAsync(eventArgs);
+
+        // If the AI decides to leave while answering, let any speech in the answer finish first
+        using IDisposable leaveHold = _voiceService.DeferLeaving(eventArgs.Guild.Id);
 
         await foreach (AiAction action in _aiService.ProcessAsync(eventArgs.Guild.Id, payload))
         {
