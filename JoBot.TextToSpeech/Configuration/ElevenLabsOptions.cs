@@ -6,6 +6,8 @@ public class ElevenLabsOptions
 
     public string VoiceId { get; set; } = null!;
 
+    public string ModelId { get; set; } = "eleven_v4";
+
     /// <summary>Lower values give a more expressive, varied delivery; higher values are more monotone. Range 0–1.</summary>
     public float Stability { get; set; } = 0.29f;
 

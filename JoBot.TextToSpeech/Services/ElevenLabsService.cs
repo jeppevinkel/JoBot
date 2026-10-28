@@ -1,4 +1,5 @@
 ﻿using ElevenLabs;
+using ElevenLabs.Models;
 using ElevenLabs.TextToSpeech;
 using ElevenLabs.Voices;
 using JoBot.Core.Interfaces;
@@ -38,7 +39,7 @@ public class ElevenLabsService : ITtsService
             style: _elevenLabsOptions.Style,
             speakerBoost: _elevenLabsOptions.SpeakerBoost,
             speed: _elevenLabsOptions.Speed);
-        var request = new TextToSpeechRequest(voice, text, voiceSettings: voiceSettings, outputFormat: OutputFormat.MP3_44100_128);
+        var request = new TextToSpeechRequest(voice, text, voiceSettings: voiceSettings, model: new Model(_elevenLabsOptions.ModelId), outputFormat: OutputFormat.MP3_44100_128);
         VoiceClip response = await _client.TextToSpeechEndpoint.TextToSpeechAsync(request, cancellationToken: cancellationToken);
         var audio = response.ClipData.ToArray();
         var id = _store.Add(audio, BuildTrackTitle(text));
