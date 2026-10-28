@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using DSharpPlus;
+﻿using DSharpPlus;
 using DSharpPlus.Entities;
 using JoBot.Core.Interfaces;
 using JoBot.Discord.Voice;
@@ -23,23 +22,23 @@ public class VoiceInactivityService : BackgroundService
     private readonly ILogger<VoiceInactivityService> _logger;
     private readonly DiscordClient _discordClient;
     private readonly IVoiceService _voiceService;
+    private readonly VoiceCompany _voiceCompany;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _timeout;
     private readonly AloneTracker _tracker = new();
-
-    // Whether a user is a bot never changes, so look it up once
-    private readonly ConcurrentDictionary<ulong, bool> _isBot = new();
 
     public VoiceInactivityService(
         ILogger<VoiceInactivityService> logger,
         DiscordClient discordClient,
         IVoiceService voiceService,
+        VoiceCompany voiceCompany,
         IOptions<VoiceBackendOptions> options,
         TimeProvider? timeProvider = null)
     {
         _logger = logger;
         _discordClient = discordClient;
         _voiceService = voiceService;
+        _voiceCompany = voiceCompany;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _timeout = options.Value.AloneTimeout;
     }
@@ -86,15 +85,7 @@ public class VoiceInactivityService : BackgroundService
             return;
         }
 
-        var hasCompany = false;
-        foreach (DiscordVoiceState state in guild.VoiceStates.Values)
-        {
-            if (state.ChannelId == channelId && state.UserId != botId && !await IsBotAsync(state))
-            {
-                hasCompany = true;
-                break;
-            }
-        }
+        var hasCompany = await _voiceCompany.HasCompanyAsync(guild, channelId);
 
         if (!_tracker.Update(guild.Id, isAlone: !hasCompany, _timeProvider.GetUtcNow(), _timeout))
             return;
@@ -105,26 +96,5 @@ public class VoiceInactivityService : BackgroundService
 
         _tracker.Forget(guild.Id);
         await _voiceService.LeaveVoiceChannelAsync(guild.Id);
-    }
-
-    private async Task<bool> IsBotAsync(DiscordVoiceState state)
-    {
-        if (_isBot.TryGetValue(state.UserId, out var isBot))
-            return isBot;
-
-        try
-        {
-            DiscordUser? user = await state.GetUserAsync();
-            if (user is null)
-                return false; // Unknown; treat as a person and look it up again next time
-
-            return _isBot[state.UserId] = user.IsBot;
-        }
-        catch (Exception ex)
-        {
-            // If we can't tell, assume a person is there rather than leaving on them
-            _logger.LogDebug(ex, "Could not look up voice user {UserId}", state.UserId);
-            return false;
-        }
     }
 }

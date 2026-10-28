@@ -25,6 +25,18 @@ public class GuildConversationHistory
     public IReadOnlyList<Message> Messages => _messages;
     public bool IsFirstAfterReboot { get; private set; } = true;
 
+    private volatile TurnInbox? _activeTurn;
+
+    /// <summary>
+    /// The turn that's answering someone right now, if any. Read without holding <see cref="Lock"/>; only set
+    /// while holding it.
+    /// </summary>
+    public TurnInbox? ActiveTurn
+    {
+        get => _activeTurn;
+        set => _activeTurn = value;
+    }
+
     public GuildConversationHistory(
         ulong guildId,
         IConversationRepository repository,
@@ -107,6 +119,8 @@ public class GuildConversationHistory
             _messages.RemoveAt(0);
     }
 
+    // Messages that arrived mid-turn are added as text after the tool results, so any tool result
+    // marks the message as part of the turn rather than the start of a new one
     private static bool IsToolResult(Message message) =>
-        message.Content.Count > 0 && message.Content.All(c => c is ToolResultContent);
+        message.Content.Any(c => c is ToolResultContent);
 }

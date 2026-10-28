@@ -20,6 +20,13 @@ namespace JoBot.Ai.Services;
 public class AiService : IAiService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    private const string NewMessagesNote =
+        "[NEW MESSAGES] While you were working on this, the following arrived in the same channel. Handle them " +
+        "along with what you were already doing. Your replies from here on are read by everyone in the channel, " +
+        "so make clear who you're answering where it isn't obvious. If any of these messages, or the one you were " +
+        "already answering, says to reply with [ignore] when it isn't meant for you, don't: just leave it out of " +
+        "your reply. Only reply with exactly [ignore] if nothing in this whole exchange needs an answer.";
     private readonly ILogger<AiService> _logger;
     private readonly AnthropicClient _anthropicClient;
     private readonly AiOptions _options;
@@ -55,13 +62,32 @@ public class AiService : IAiService
         _logger.LogInformation("Received payload:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
 
         GuildConversationHistory history = GetGuildHistory(guildId);
+        var channelKey = GetChannelKey(payload);
+
+        // Someone is already being answered in this channel: join that answer instead of waiting for it
+        if (history.ActiveTurn is { } activeTurn &&
+            activeTurn.ChannelKey == channelKey &&
+            activeTurn.TryPost(JsonSerializer.Serialize(payload, JsonOptions)) is { } posted)
+        {
+            if (await posted.WaitAsync(cancellationToken))
+            {
+                _logger.LogInformation("Added message {MessageId} to the reply already in progress in guild {GuildId}",
+                    payload.Message.Id, guildId);
+
+                // Keep the caller around until the reply is out, e.g. so the bot doesn't leave voice before speaking it
+                await activeTurn.Completed.WaitAsync(cancellationToken);
+                yield return new MergedAction();
+                yield break;
+            }
+
+            // The turn finished before reaching its next tool call; answer this on its own
+        }
 
         await history.Lock.WaitAsync(cancellationToken);
+        var inbox = new TurnInbox(channelKey);
         try
         {
             await history.EnsureInitializedAsync();
-
-            GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
 
             if (history.IsFirstAfterReboot)
                 payload = payload with { IsFirstAfterReboot = true };
@@ -69,96 +95,179 @@ public class AiService : IAiService
             await history.AddAsync(new Message(RoleType.User,
                 JsonSerializer.Serialize(payload, JsonOptions)));
 
-            var parameters = new MessageParameters
-            {
-                Messages = history.Messages.ToList(),
-                MaxTokens = _options.MaxTokens,
-                Temperature = settings.AiTemperature,
-                Model = _options.Model,
-                Tools = _toolFactory.Tools.ToList(),
-                Stream = false,
-                System = [new SystemMessage(settings.SystemPrompt)]
-            };
+            history.ActiveTurn = inbox;
 
-            ApiCallResult result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
-            MessageResponse response;
-            if (result is not ApiCallSuccess { Response: var claudeResponse })
+            await foreach (AiAction action in RunTurnAsync(
+                               guildId, () => history.Messages, history.AddAsync, inbox, cancellationToken))
+                yield return action;
+        }
+        finally
+        {
+            history.ActiveTurn = null;
+            inbox.Close();
+            history.Lock.Release();
+        }
+    }
+
+    public async IAsyncEnumerable<AiAction> ProcessEventAsync(
+        ulong guildId,
+        Func<CancellationToken, Task<AutomatedEventPayload?>> buildPayload,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        GuildConversationHistory history = GetGuildHistory(guildId);
+        AutomatedEventPayload? payload;
+        List<Message> messages;
+
+        // Wait for anyone being answered, so the event sees what they asked for and what was done about it.
+        // The event itself runs on a copy, without holding up messages that arrive meanwhile.
+        await history.Lock.WaitAsync(cancellationToken);
+        try
+        {
+            payload = await buildPayload(cancellationToken);
+            if (payload is null)
+                yield break;
+
+            await history.EnsureInitializedAsync();
+            messages = history.Messages.ToList();
+        }
+        finally
+        {
+            history.Lock.Release();
+        }
+
+        _logger.LogInformation("Received automated event:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
+
+        messages.Add(new Message(RoleType.User, JsonSerializer.Serialize(payload, JsonOptions)));
+
+        await foreach (AiAction action in RunTurnAsync(
+                           guildId,
+                           () => messages,
+                           message =>
+                           {
+                               messages.Add(message);
+                               return Task.CompletedTask;
+                           },
+                           inbox: null,
+                           cancellationToken))
+            yield return action;
+    }
+
+    /// <summary>Messages with the same key can be added to each other's replies.</summary>
+    /// <remarks>Replies go back the way the message came, so only messages from the same channel and medium can share one.</remarks>
+    private static string GetChannelKey(MessagePayload payload) =>
+        $"{payload.Source.Type}:{payload.Source.Channel.Id}";
+
+    /// <summary>Gets Claude's answer to the last message, running tools until it's done.</summary>
+    /// <param name="getMessages">The conversation so far, ending with the message to answer.</param>
+    /// <param name="addMessage">Appends Claude's responses and tool results to the conversation.</param>
+    /// <param name="inbox">Messages to add to the turn as they arrive, if it takes any.</param>
+    private async IAsyncEnumerable<AiAction> RunTurnAsync(
+        ulong guildId,
+        Func<IReadOnlyList<Message>> getMessages,
+        Func<Message, Task> addMessage,
+        TurnInbox? inbox,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
+
+        var parameters = new MessageParameters
+        {
+            Messages = getMessages().ToList(),
+            MaxTokens = _options.MaxTokens,
+            Temperature = settings.AiTemperature,
+            Model = _options.Model,
+            Tools = _toolFactory.Tools.ToList(),
+            Stream = false,
+            System = [new SystemMessage(settings.SystemPrompt)]
+        };
+
+        ApiCallResult result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
+        MessageResponse response;
+        if (result is not ApiCallSuccess { Response: var claudeResponse })
+        {
+            // Compiler knows this must be ApiCallError
+            yield return ((ApiCallError)result).Error;
+            yield break;
+        }
+        response = claudeResponse;
+
+        if (response.Message is null)
+        {
+            yield return new IgnoreAction();
+            yield break;
+        }
+
+        await addMessage(response.Message);
+
+        var toolIterations = 0;
+        var isShared = false;
+        while (response.ToolCalls?.Count > 0 && toolIterations < _options.MaxToolIterations)
+        {
+            toolIterations++;
+
+            // Yield any text Claude produced alongside the tool calls
+            var textContent = response.Message?.Content
+                .OfType<TextContent>()
+                .FirstOrDefault()?.Text;
+
+            if (!string.IsNullOrWhiteSpace(textContent))
+                yield return new RespondAction { Content = textContent, IsShared = isShared };
+
+            // All results go in one message, followed by anything people said in the meantime
+            var results = new List<ContentBase>();
+            foreach (Function? toolCall in response.ToolCalls)
+            {
+                try
+                {
+                    var toolResult = await _toolFactory.InvokeAsync(
+                        toolCall.Name,
+                        toolCall.Arguments);
+                    _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, toolResult);
+                    results.AddRange(new Message(toolCall, toolResult).Content);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error invoking tool call {ToolName}", toolCall.Name);
+                    results.AddRange(new Message(toolCall, ex.ToString()).Content);
+                }
+            }
+
+            var newMessages = inbox?.Drain() ?? [];
+            if (newMessages.Count > 0)
+            {
+                results.Add(new TextContent { Text = NewMessagesNote });
+                results.AddRange(newMessages.Select(message => new TextContent { Text = message }));
+                isShared = true;
+            }
+
+            await addMessage(new Message { Role = RoleType.User, Content = results });
+
+            parameters.Messages = getMessages().ToList();
+            result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
+            if (result is not ApiCallSuccess { Response: var secondClaudeResponse })
             {
                 // Compiler knows this must be ApiCallError
                 yield return ((ApiCallError)result).Error;
                 yield break;
             }
-            response = claudeResponse;
 
-            if (response.Message is null)
-            {
-                yield return new IgnoreAction();
-                yield break;
-            }
-
-            await history.AddAsync(response.Message);
-
-            var toolIterations = 0;
-            while (response.ToolCalls?.Count > 0 && toolIterations < _options.MaxToolIterations)
-            {
-                toolIterations++;
-
-                // Yield any text Claude produced alongside the tool calls
-                var textContent = response.Message?.Content
-                    .OfType<TextContent>()
-                    .FirstOrDefault()?.Text;
-
-                if (!string.IsNullOrWhiteSpace(textContent))
-                    yield return new RespondAction { Content = textContent };
-
-                foreach (Function? toolCall in response.ToolCalls)
-                {
-                    try
-                    {
-                        var toolResult = await _toolFactory.InvokeAsync(
-                            toolCall.Name,
-                            toolCall.Arguments);
-                        _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, toolResult);
-                        await history.AddAsync(new Message(toolCall, toolResult));
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error invoking tool call {ToolName}", toolCall.Name);
-                        await history.AddAsync(new Message(toolCall, ex.ToString()));
-                    }
-                }
-
-                parameters.Messages = history.Messages.ToList();
-                result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);
-                if (result is not ApiCallSuccess { Response: var secondClaudeResponse })
-                {
-                    // Compiler knows this must be ApiCallError
-                    yield return ((ApiCallError)result).Error;
-                    yield break;
-                }
-
-                response = secondClaudeResponse;
-
-                if (response.Message is not null)
-                    await history.AddAsync(response.Message);
-            }
-
-            if (toolIterations >= _options.MaxToolIterations)
-                _logger.LogWarning("Max tool iterations ({Max}) reached for guild {GuildId}",
-                    _options.MaxToolIterations, guildId);
+            response = secondClaudeResponse;
 
             if (response.Message is not null)
-            {
-                yield return new RespondAction { Content = response.Message };
-            }
-            else
-            {
-                yield return new IgnoreAction();
-            }
+                await addMessage(response.Message);
         }
-        finally
+
+        if (toolIterations >= _options.MaxToolIterations)
+            _logger.LogWarning("Max tool iterations ({Max}) reached for guild {GuildId}",
+                _options.MaxToolIterations, guildId);
+
+        if (response.Message is not null)
         {
-            history.Lock.Release();
+            yield return new RespondAction { Content = response.Message, IsShared = isShared };
+        }
+        else
+        {
+            yield return new IgnoreAction();
         }
     }
 

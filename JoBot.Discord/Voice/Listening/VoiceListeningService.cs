@@ -183,12 +183,16 @@ public class VoiceListeningService : BackgroundService, IUtteranceSink
                         _logger.LogDebug("AI decided a follow-up from user {UserId} wasn't meant for it", userId);
                         break;
                     case RespondAction response:
-                        _lastAnswered[(guild.Id, userId)] = _timeProvider.GetUtcNow();
+                        RecordAnswered(guild.Id, userId, addressedByName, response.IsShared);
                         await DeliverAsync(guild.Id, channel, response.Content, stoppingToken);
                         break;
                     case ReplyAction reply:
                         // Errors from the AI service; not worth speaking out loud
                         await SendTextAsync(channel, reply.Content);
+                        break;
+                    case MergedAction:
+                        // The answer someone else was getting covered this too, and was spoken by their handler
+                        RecordAnswered(guild.Id, userId, addressedByName, isShared: true);
                         break;
                 }
             }
@@ -256,6 +260,18 @@ public class VoiceListeningService : BackgroundService, IUtteranceSink
 
     private static bool IsIgnoreReply(string content) =>
         content.Trim().Equals(IgnoreReply, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Lets the speaker carry on talking to the bot without its name for a while.</summary>
+    /// <remarks>
+    /// A reply shared with others may have left out a follow-up that wasn't meant for the bot, and there's no telling
+    /// whether it did. Only people who said the bot's name get a fresh window then; otherwise someone chatting
+    /// near the bot could keep being sent to the AI.
+    /// </remarks>
+    private void RecordAnswered(ulong guildId, ulong userId, bool addressedByName, bool isShared)
+    {
+        if (addressedByName || !isShared)
+            _lastAnswered[(guildId, userId)] = _timeProvider.GetUtcNow();
+    }
 
     private bool IsFollowUp(ulong guildId, ulong userId) =>
         _options.FollowUpWindow > TimeSpan.Zero &&

@@ -115,13 +115,13 @@ public class ToolFactory
         return node.Deserialize(param.ParameterType, ParameterDeserializeOptions);
     }
 
-    private static string GetJsonType(Type type) => type switch
+    private static string GetJsonType(Type type) => (Nullable.GetUnderlyingType(type) ?? type) switch
     {
-        _ when type == typeof(string) => "string",
-        _ when type == typeof(int) || type == typeof(long) => "integer",
-        _ when type == typeof(float) || type == typeof(double) || type == typeof(decimal) => "number",
-        _ when type == typeof(bool) => "boolean",
-        _ when type.IsArray || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>)) => "array",
+        var t when t == typeof(string) => "string",
+        var t when t == typeof(int) || t == typeof(long) => "integer",
+        var t when t == typeof(float) || t == typeof(double) || t == typeof(decimal) => "number",
+        var t when t == typeof(bool) => "boolean",
+        var t when t.IsArray || (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(List<>)) => "array",
         _ => "string"
     };
 

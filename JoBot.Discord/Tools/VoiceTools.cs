@@ -2,16 +2,24 @@
 using JoBot.Core.Helpers;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
+using JoBot.Discord.Dj;
 
 namespace JoBot.Discord.Tools;
 
 public class VoiceTools : IToolProvider
 {
-    private readonly IVoiceService _voiceService;
+    // The AI sees volume as a percentage where 100% is half the player's full volume: full volume is loud, and
+    // even 10% of it is comfortable, so a low-looking number would otherwise read as nearly silent
+    private const float VolumePercentScale = 200f;
+    private const int MaxVolumePercent = 200;
 
-    public VoiceTools(IVoiceService voiceService)
+    private readonly IVoiceService _voiceService;
+    private readonly DjSessionStore _djSessions;
+
+    public VoiceTools(IVoiceService voiceService, DjSessionStore djSessions)
     {
         _voiceService = voiceService;
+        _djSessions = djSessions;
     }
 
     [AiTool("Join a voice channel")]
@@ -23,10 +31,12 @@ public class VoiceTools : IToolProvider
         return success ? ToolResult.Success("Joined voice channel.") : ToolResult.Failure("Failed to join voice channel.");
     }
 
-    [AiTool("Leave the current voice channel. Music stops right away; anything you say before or after this is still spoken before leaving")]
+    [AiTool("Leave the current voice channel. Music stops right away and DJ mode turns off; anything you say before or after this is still spoken before leaving")]
     public async Task<string> LeaveVoiceChannelAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
+        // Otherwise DJ mode could refill the queue before the bot is gone
+        _djSessions.Disable(guildId);
         await _voiceService.LeaveVoiceChannelAsync(guildId);
         return ToolResult.Success("Leaving the voice channel once any speech has finished.");
     }
@@ -53,12 +63,13 @@ public class VoiceTools : IToolProvider
             : ToolResult.Failure("Failed to start playback. Ensure the bot is connected to a voice channel first.");
     }
 
-    [AiTool("Stop audio playback in the current voice channel")]
+    [AiTool("Stop audio playback in the current voice channel. This also turns DJ mode off")]
     public async Task<string> StopAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
+        var wasDjMode = _djSessions.Disable(guildId);
         await _voiceService.StopAsync(guildId);
-        return ToolResult.Success("Playback stopped.");
+        return ToolResult.Success(wasDjMode ? "Playback stopped and DJ mode turned off." : "Playback stopped.");
     }
 
     [AiTool("Check if the bot is connected to a voice channel")]
@@ -96,7 +107,15 @@ public class VoiceTools : IToolProvider
         [AiParameter("Track artist to display in the queue", Required = false)] string? artist = null,
         [AiParameter("Track album to display in the queue", Required = false)] string? album = null)
     {
-        var success = await _voiceService.EnqueueAsync(guildId, streamUrl, title, artist, album);
+        // Tracks queued while topping up for DJ mode go behind the ones people ask for
+        DjTurn? djTurn = DjTurn.Current;
+        if (djTurn is { IsSessionEnded: true })
+            return ToolResult.Failure("DJ mode was turned off, so don't add any more tracks.");
+
+        var success = await _voiceService.EnqueueAsync(guildId, streamUrl, title, artist, album, isDjPick: djTurn is not null);
+        if (success)
+            djTurn?.RecordTrackAdded();
+
         return success
             ? ToolResult.Success("Track added to queue.")
             : ToolResult.Failure("Failed to add track to queue.");
@@ -106,6 +125,11 @@ public class VoiceTools : IToolProvider
     public async Task<string> SkipAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
+        // DJ mode steers away from what people skip
+        if (_djSessions.Get(guildId) is { } djSession &&
+            await _voiceService.GetNowPlayingAsync(guildId) is { Track: { } skipped })
+            djSession.RecordSkip(skipped);
+
         await _voiceService.SkipAsync(guildId);
         return ToolResult.Success("Skipped current track.");
     }
@@ -149,24 +173,27 @@ public class VoiceTools : IToolProvider
             invalidArgumentMessage: "Position must be between 0 and the duration of the current track.");
     }
 
-    [AiTool("Get the current music volume as a percentage")]
+    [AiTool("Get the current music volume as a percentage, where 100 is a normal listening level and 200 the maximum")]
     public async Task<string> GetVolumeAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
         var volume = await _voiceService.GetVolumeAsync(guildId);
         return volume is null
             ? ToolResult.Failure("Not connected to voice.")
-            : ToolResult.Success(new { volume = (int)Math.Round(volume.Value * 100) });
+            : ToolResult.Success(new { volume = (int)Math.Round(volume.Value * VolumePercentScale) });
     }
 
     [AiTool("Set the music volume for the current session. This does not change the server's default volume")]
     public async Task<string> SetVolumeAsync(
         [AiParameter("Guild ID")] ulong guildId,
-        [AiParameter("Volume as a percentage from 0 to 100")] int volume)
+        [AiParameter("Volume as a percentage from 0 to 200, where 100 is a normal listening level")] int volume)
     {
-        var result = await _voiceService.SetVolumeAsync(guildId, volume / 100f);
+        if (volume is < 0 or > MaxVolumePercent)
+            return ToolResult.Failure($"Volume must be between 0 and {MaxVolumePercent}.");
+
+        var result = await _voiceService.SetVolumeAsync(guildId, volume / VolumePercentScale);
         return ToResultMessage(result, $"Volume set to {volume}%.",
-            invalidArgumentMessage: "Volume must be between 0 and 100.");
+            invalidArgumentMessage: $"Volume must be between 0 and {MaxVolumePercent}.");
     }
 
     [AiTool("Remove a track from the queue without affecting the current track. Use get_queue first to find the track's position")]

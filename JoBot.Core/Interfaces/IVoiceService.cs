@@ -41,5 +41,11 @@ public interface IVoiceService
     Task<int?> ClearQueueAsync(ulong guildId);
     /// <returns>The voice channels the bot can see, or null if the guild is unknown.</returns>
     Task<IReadOnlyList<VoiceChannelInfo>?> GetVoiceChannelsAsync(ulong guildId);
-    Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null);
+
+    /// <summary>
+    /// Plays the track if nothing is playing, otherwise queues it. Tracks people asked for are queued in front of
+    /// tracks DJ mode added, so a request doesn't wait behind the DJ's picks.
+    /// </summary>
+    /// <param name="isDjPick">Whether DJ mode chose this track, rather than someone asking for it.</param>
+    Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null, bool isDjPick = false);
 }

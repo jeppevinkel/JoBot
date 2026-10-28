@@ -220,12 +220,12 @@ public class NativeVoiceService : IVoiceService
         return Task.FromResult(true);
     }
 
-    public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null)
+    public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null, bool isDjPick = false)
     {
         if (!TryGetPlayer(guildId, out NativeGuildPlayer? player))
             return false;
 
-        player.Enqueue(await CreateTrackAsync(streamUrl, title, artist, album));
+        player.Enqueue(await CreateTrackAsync(streamUrl, title, artist, album) with { IsDjPick = isDjPick });
         return true;
     }
 

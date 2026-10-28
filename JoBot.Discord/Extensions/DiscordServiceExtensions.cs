@@ -7,6 +7,7 @@ using DSharpPlus.Extensions;
 using JoBot.Core.Interfaces;
 using JoBot.Discord.Builders;
 using JoBot.Discord.Commands;
+using JoBot.Discord.Dj;
 using JoBot.Discord.Handlers;
 using JoBot.Discord.Resolvers;
 using JoBot.Discord.Services;
@@ -34,6 +35,7 @@ public static class DiscordServiceExtensions
         var lavalinkPassphrase = config["Lavalink:Passphrase"];
         var voiceOptions = config.GetSection(VoiceBackendOptions.SectionName).Get<VoiceBackendOptions>() ?? new VoiceBackendOptions();
         var listeningOptions = config.GetSection(VoiceListeningOptions.SectionName).Get<VoiceListeningOptions>() ?? new VoiceListeningOptions();
+        var djModeOptions = config.GetSection(DjModeOptions.SectionName).Get<DjModeOptions>() ?? new DjModeOptions();
 
         Core.Helpers.ConfigurationValidator.Validate(("Discord:Token", token));
         if (voiceOptions.Backend is VoiceBackend.Lavalink)
@@ -44,6 +46,7 @@ public static class DiscordServiceExtensions
 
         services.AddHostedService<DiscordBotService>();
         services.AddHostedService<VoiceInactivityService>();
+        services.AddSingleton<VoiceCompany>();
         services.AddDiscordClient(token!, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
 
         SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
@@ -66,6 +69,8 @@ public static class DiscordServiceExtensions
             .Bind(config.GetSection(VoiceBackendOptions.SectionName));
         services.AddOptions<VoiceListeningOptions>()
             .Bind(config.GetSection(VoiceListeningOptions.SectionName));
+        services.AddOptions<DjModeOptions>()
+            .Bind(config.GetSection(DjModeOptions.SectionName));
 
         if (voiceOptions.Backend is VoiceBackend.Native)
         {
@@ -108,6 +113,14 @@ public static class DiscordServiceExtensions
         });
         services.AddSingleton<IDisplayNameResolver, DisplayNameResolver>();
         services.AddSingleton<IMessagePayloadBuilder, MessagePayloadBuilder>();
+
+        // DJ mode; the voice tools use the session store even when it's turned off
+        services.AddSingleton<DjSessionStore>();
+        if (djModeOptions.Enabled)
+        {
+            services.AddHostedService<DjModeService>();
+            services.AddSingleton<IToolProvider, DjTools>();
+        }
 
         // Tools
         services.AddSingleton<IToolProvider, VoiceTools>();

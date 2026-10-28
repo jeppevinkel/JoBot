@@ -75,6 +75,10 @@ public class MessageHandler : IEventHandler<MessageCreatedEventArgs>
                 case IgnoreAction:
                     _logger.LogDebug("AI chose to ignore message {MessageId}", payload.Message.Id);
                     break;
+                case MergedAction:
+                    // Answered in the same channel by the reply that was already in progress
+                    _logger.LogDebug("Message {MessageId} was answered along with an earlier message", payload.Message.Id);
+                    break;
             }
         }
     }

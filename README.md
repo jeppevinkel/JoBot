@@ -79,6 +79,25 @@ To use the native backend, set `Voice__Backend=Native` and drop the `lavalink` s
 
 With either backend, the bot leaves a voice channel after it has been there for 10 minutes without any other non-bot users. Change this with `Voice__AloneTimeout` (e.g. `00:30:00`), or set it to `00:00:00` to stay indefinitely.
 
+## DJ Mode
+
+Ask the bot to keep the music going (e.g. "keep the music going, I'm into 90s hip hop") and it turns on DJ mode. Whenever two or fewer tracks are left in the queue, the bot asks the AI to add about five more that fit the session: the style notes it was given, what people asked for earlier, and what's been played. It avoids repeating recent tracks and steers away from tracks people skipped. Tracks people ask for still go in front of the DJ's picks.
+
+DJ mode is off by default and only turns on when someone asks. Ask the bot to change the style at any time, or to announce what it adds: with announcements on, it introduces new tracks out loud and posts the same in the channel where DJ mode was turned on. It turns off when asked, when the music is stopped, or when the bot leaves voice. It doesn't ask for tracks while no one else is in the voice channel. If the AI adds nothing three times in a row, DJ mode pauses and says so.
+
+The AI sees the conversation when picking tracks, but the requests for more tracks aren't added to it, so they don't push out what people said. People talking to the bot don't have to wait for a top-up to finish, and announcements are spoken after any reply that's already playing rather than over it.
+
+```yaml
+      # Optional (defaults shown)
+      - DjMode__Enabled=true              # Set to false to not offer DJ mode at all
+      - DjMode__LowQueueThreshold=2       # Ask for tracks once this many or fewer are queued
+      - DjMode__TopUpCount=5              # Tracks to ask for each time
+      - DjMode__NudgeCooldown=00:00:30    # Minimum time between asking
+      - DjMode__MaxRetries=3              # Times in a row the AI may add nothing before DJ mode pauses
+      - DjMode__HistorySize=50            # Recently played and skipped tracks passed to the AI
+      - DjMode__MaxNudgesPerHour=20       # Cost cap per server
+```
+
 ## Voice Listening (experimental)
 
 With the native backend, the bot can listen in voice channels and answer when spoken to. Everything said is sent to a self-hosted speech-to-text server. When a transcript contains the bot's name (its server nickname, its username, or anything in `VoiceListening__WakeWords`), the transcript goes to the AI. The reply is spoken with TTS and posted in the voice channel's text chat. For `VoiceListening__FollowUpWindow` (20 seconds by default) after the bot answers someone, that person can keep talking to it without saying its name. A transcript that is nothing but the bot's name is ignored: the speech-to-text server is primed with the name, so it tends to "hear" it in background noise.
