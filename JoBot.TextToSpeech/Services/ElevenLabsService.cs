@@ -32,7 +32,13 @@ public class ElevenLabsService : ITtsService
         var port = _textToSpeechOptions.Port;
 
         Voice voice = await GetVoice();
-        var request = new TextToSpeechRequest(voice, text, outputFormat: OutputFormat.MP3_44100_128);
+        var voiceSettings = new VoiceSettings(
+            stability: _elevenLabsOptions.Stability,
+            similarityBoost: _elevenLabsOptions.SimilarityBoost,
+            style: _elevenLabsOptions.Style,
+            speakerBoost: _elevenLabsOptions.SpeakerBoost,
+            speed: _elevenLabsOptions.Speed);
+        var request = new TextToSpeechRequest(voice, text, voiceSettings: voiceSettings, outputFormat: OutputFormat.MP3_44100_128);
         VoiceClip response = await _client.TextToSpeechEndpoint.TextToSpeechAsync(request, cancellationToken: cancellationToken);
         var audio = response.ClipData.ToArray();
         var id = _store.Add(audio, BuildTrackTitle(text));
