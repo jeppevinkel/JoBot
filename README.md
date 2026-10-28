@@ -81,7 +81,7 @@ With either backend, the bot leaves a voice channel after it has been there for 
 
 ## Voice Listening (experimental)
 
-With the native backend, the bot can listen in voice channels and answer when spoken to. Everything said is sent to a self-hosted speech-to-text server. When a transcript contains the bot's name (its server nickname, its username, or anything in `VoiceListening__WakeWords`), the transcript goes to the AI. The reply is spoken with TTS and posted in the voice channel's text chat. For `VoiceListening__FollowUpWindow` (20 seconds by default) after the bot answers someone, that person can keep talking to it without saying its name.
+With the native backend, the bot can listen in voice channels and answer when spoken to. Everything said is sent to a self-hosted speech-to-text server. When a transcript contains the bot's name (its server nickname, its username, or anything in `VoiceListening__WakeWords`), the transcript goes to the AI. The reply is spoken with TTS and posted in the voice channel's text chat. For `VoiceListening__FollowUpWindow` (20 seconds by default) after the bot answers someone, that person can keep talking to it without saying its name. A transcript that is nothing but the bot's name is ignored: the speech-to-text server is primed with the name, so it tends to "hear" it in background noise.
 
 Only enable this where everyone in the voice channel knows the bot is listening.
 

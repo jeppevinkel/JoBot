@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 
 namespace JoBot.Discord.Voice.Listening;
@@ -26,23 +26,67 @@ public static class WakeWordMatcher
             if (wakeTokens.Count == 0)
                 continue;
 
-            var target = string.Concat(wakeTokens);
-            var maxEdits = MaxEdits(target.Length);
-
-            // Try the same number of words, plus one more or less, to catch names split or joined differently
-            for (var windowSize = Math.Max(1, wakeTokens.Count - 1); windowSize <= wakeTokens.Count + 1; windowSize++)
+            for (var start = 0; start < tokens.Count; start++)
             {
-                for (var start = 0; start + windowSize <= tokens.Count; start++)
-                {
-                    var candidate = string.Concat(tokens.Skip(start).Take(windowSize));
-                    if (Math.Abs(candidate.Length - target.Length) <= maxEdits &&
-                        LevenshteinDistance(candidate, target) <= maxEdits)
-                        return true;
-                }
+                if (MatchLengths(tokens, start, wakeTokens).Any())
+                    return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="transcript"/> is nothing but wake words ("Jobot.", "Jobot? Jobot!").
+    /// </summary>
+    /// <remarks>
+    /// Speech-to-text primed with the bot's name tends to "hear" exactly that name in background noise,
+    /// so a transcript like this is far more likely a hallucination than someone talking.
+    /// </remarks>
+    public static bool IsOnlyWakeWords(string transcript, IEnumerable<string> wakeWords)
+    {
+        var tokens = Tokenize(transcript);
+        if (tokens.Count == 0)
+            return false;
+
+        var wakeTokenLists = wakeWords.Select(Tokenize).Where(wakeTokens => wakeTokens.Count > 0).ToList();
+
+        // covered[i] is true when the first i words can be split entirely into wake words
+        var covered = new bool[tokens.Count + 1];
+        covered[0] = true;
+
+        for (var start = 0; start < tokens.Count; start++)
+        {
+            if (!covered[start])
+                continue;
+
+            foreach (var wakeTokens in wakeTokenLists)
+            {
+                foreach (var length in MatchLengths(tokens, start, wakeTokens))
+                    covered[start + length] = true;
+            }
+        }
+
+        return covered[tokens.Count];
+    }
+
+    /// <summary>Yields how many words starting at <paramref name="start"/> spell out the wake word, for each way they do.</summary>
+    private static IEnumerable<int> MatchLengths(List<string> tokens, int start, List<string> wakeTokens)
+    {
+        var target = string.Concat(wakeTokens);
+        var maxEdits = MaxEdits(target.Length);
+
+        // Try the same number of words, plus one more or less, to catch names split or joined differently
+        for (var windowSize = Math.Max(1, wakeTokens.Count - 1); windowSize <= wakeTokens.Count + 1; windowSize++)
+        {
+            if (start + windowSize > tokens.Count)
+                break;
+
+            var candidate = string.Concat(tokens.Skip(start).Take(windowSize));
+            if (Math.Abs(candidate.Length - target.Length) <= maxEdits &&
+                LevenshteinDistance(candidate, target) <= maxEdits)
+                yield return windowSize;
+        }
     }
 
     private static int MaxEdits(int length) => length switch

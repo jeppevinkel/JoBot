@@ -127,6 +127,14 @@ public class VoiceListeningService : BackgroundService, IUtteranceSink
         _logger.LogDebug("Heard user {UserId} in guild {GuildId} ({Duration:0.0}s): {Transcript}",
             utterance.UserId, utterance.GuildId, utterance.Duration.TotalSeconds, transcript);
 
+        // Primed with the bot's name, speech-to-text tends to turn background noise into just that name.
+        // Left alone, those would count as follow-ups to each other and keep the bot answering nothing.
+        if (WakeWordMatcher.IsOnlyWakeWords(transcript, wakeWords))
+        {
+            _logger.LogDebug("Ignoring transcript from user {UserId} that is only the bot's name", utterance.UserId);
+            return;
+        }
+
         var addressedByName = WakeWordMatcher.ContainsWakeWord(transcript, wakeWords);
         if (!addressedByName && !IsFollowUp(utterance.GuildId, utterance.UserId))
             return;
