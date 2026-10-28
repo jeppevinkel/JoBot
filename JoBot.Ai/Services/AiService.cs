@@ -24,7 +24,9 @@ public class AiService : IAiService
     private const string NewMessagesNote =
         "[NEW MESSAGES] While you were working on this, the following arrived in the same channel. Handle them " +
         "along with what you were already doing. Your replies from here on are read by everyone in the channel, " +
-        "so make clear who you're answering where it isn't obvious.";
+        "so make clear who you're answering where it isn't obvious. If any of these messages, or the one you were " +
+        "already answering, says to reply with [ignore] when it isn't meant for you, don't: just leave it out of " +
+        "your reply. Only reply with exactly [ignore] if nothing in this whole exchange needs an answer.";
     private readonly ILogger<AiService> _logger;
     private readonly AnthropicClient _anthropicClient;
     private readonly AiOptions _options;
@@ -60,11 +62,10 @@ public class AiService : IAiService
         _logger.LogInformation("Received payload:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
 
         GuildConversationHistory history = GetGuildHistory(guildId);
-        var channelKey = GetMergeableChannelKey(payload);
+        var channelKey = GetChannelKey(payload);
 
         // Someone is already being answered in this channel: join that answer instead of waiting for it
-        if (channelKey is not null &&
-            history.ActiveTurn is { } activeTurn &&
+        if (history.ActiveTurn is { } activeTurn &&
             activeTurn.ChannelKey == channelKey &&
             activeTurn.TryPost(JsonSerializer.Serialize(payload, JsonOptions)) is { } posted)
         {
@@ -83,7 +84,7 @@ public class AiService : IAiService
         }
 
         await history.Lock.WaitAsync(cancellationToken);
-        TurnInbox? inbox = channelKey is null ? null : new TurnInbox(channelKey);
+        var inbox = new TurnInbox(channelKey);
         try
         {
             await history.EnsureInitializedAsync();
@@ -103,7 +104,7 @@ public class AiService : IAiService
         finally
         {
             history.ActiveTurn = null;
-            inbox?.Close();
+            inbox.Close();
             history.Lock.Release();
         }
     }
@@ -151,18 +152,10 @@ public class AiService : IAiService
             yield return action;
     }
 
-    /// <summary>
-    /// Messages that can be added to a reply already in progress in the same channel, keyed by that channel;
-    /// null for those that can't.
-    /// </summary>
-    /// <remarks>
-    /// Replies go back the way the message came, so only messages from the same channel and medium can share one.
-    /// Spoken follow-ups that didn't name the bot may not be meant for it, which a shared reply can't express.
-    /// </remarks>
-    private static string? GetMergeableChannelKey(MessagePayload payload) =>
-        payload.SpokenInput is { AddressedByName: false }
-            ? null
-            : $"{payload.Source.Type}:{payload.Source.Channel.Id}";
+    /// <summary>Messages with the same key can be added to each other's replies.</summary>
+    /// <remarks>Replies go back the way the message came, so only messages from the same channel and medium can share one.</remarks>
+    private static string GetChannelKey(MessagePayload payload) =>
+        $"{payload.Source.Type}:{payload.Source.Channel.Id}";
 
     /// <summary>Gets Claude's answer to the last message, running tools until it's done.</summary>
     /// <param name="getMessages">The conversation so far, ending with the message to answer.</param>
@@ -207,6 +200,7 @@ public class AiService : IAiService
         await addMessage(response.Message);
 
         var toolIterations = 0;
+        var isShared = false;
         while (response.ToolCalls?.Count > 0 && toolIterations < _options.MaxToolIterations)
         {
             toolIterations++;
@@ -217,7 +211,7 @@ public class AiService : IAiService
                 .FirstOrDefault()?.Text;
 
             if (!string.IsNullOrWhiteSpace(textContent))
-                yield return new RespondAction { Content = textContent };
+                yield return new RespondAction { Content = textContent, IsShared = isShared };
 
             // All results go in one message, followed by anything people said in the meantime
             var results = new List<ContentBase>();
@@ -243,6 +237,7 @@ public class AiService : IAiService
             {
                 results.Add(new TextContent { Text = NewMessagesNote });
                 results.AddRange(newMessages.Select(message => new TextContent { Text = message }));
+                isShared = true;
             }
 
             await addMessage(new Message { Role = RoleType.User, Content = results });
@@ -268,7 +263,7 @@ public class AiService : IAiService
 
         if (response.Message is not null)
         {
-            yield return new RespondAction { Content = response.Message };
+            yield return new RespondAction { Content = response.Message, IsShared = isShared };
         }
         else
         {
