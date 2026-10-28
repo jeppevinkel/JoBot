@@ -17,6 +17,7 @@ namespace JoBot.Discord.Services;
 public class LavalinkVoiceService : IVoiceService
 {
     private const string AlbumMetadataKey = "jobot.album";
+    private const string DjPickMetadataKey = "jobot.dj_pick";
 
     private readonly ILogger<LavalinkVoiceService> _logger;
     private readonly IAudioService _audioService;
@@ -157,7 +158,7 @@ public class LavalinkVoiceService : IVoiceService
         }
     }
 
-    public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null)
+    public async Task<bool> EnqueueAsync(ulong guildId, string streamUrl, string? title = null, string? artist = null, string? album = null, bool isDjPick = false)
     {
         try
         {
@@ -167,14 +168,33 @@ public class LavalinkVoiceService : IVoiceService
             var track = await _audioService.Tracks.LoadTrackAsync(streamUrl, TrackSearchMode.None);
             if (track is null) return false;
 
-            track = ApplyMetadata(track, title, artist, album);
+            track = ApplyMetadata(track, title, artist, album, isDjPick);
 
             // If nothing is playing, start immediately
-            // Otherwise add to queue
+            // Otherwise add to queue, in front of the DJ's picks unless this is one
             if (player.State == PlayerState.NotPlaying)
+            {
                 await player.PlayAsync(track);
+            }
             else
-                await player.Queue.AddAsync(new TrackQueueItem(track));
+            {
+                ITrackQueue queue = player.Queue;
+                var firstDjPick = -1;
+                if (!isDjPick)
+                {
+                    for (var i = 0; i < queue.Count && firstDjPick < 0; i++)
+                    {
+                        if (queue[i].Track is { } queued && IsDjPick(queued))
+                            firstDjPick = i;
+                    }
+                }
+
+                if (firstDjPick >= 0)
+                    await queue.InsertAsync(firstDjPick, new TrackQueueItem(track));
+                else
+                    await queue.AddAsync(new TrackQueueItem(track));
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -387,7 +407,8 @@ public class LavalinkVoiceService : IVoiceService
                 Title = item.Track?.Title ?? "Unknown",
                 Artist = item.Track?.Author ?? "Unknown",
                 Duration = item.Track?.Duration ?? TimeSpan.Zero,
-                Album = item.Track is null ? null : GetAlbum(item.Track)
+                Album = item.Track is null ? null : GetAlbum(item.Track),
+                IsDjPick = item.Track is not null && IsDjPick(item.Track)
             }).ToList()
         };
     }
@@ -397,7 +418,8 @@ public class LavalinkVoiceService : IVoiceService
         Title = track.Title,
         Artist = track.Author,
         Duration = track.Duration,
-        Album = GetAlbum(track)
+        Album = GetAlbum(track),
+        IsDjPick = IsDjPick(track)
     };
 
     private static TrackInfo ToQueueItemInfo(ITrackQueueItem item) =>
@@ -405,16 +427,18 @@ public class LavalinkVoiceService : IVoiceService
             ? new TrackInfo { Title = "Unknown", Artist = "Unknown", Duration = TimeSpan.Zero }
             : ToTrackInfo(item.Track);
 
-    private static LavalinkTrack ApplyMetadata(LavalinkTrack track, string? title, string? artist, string? album)
+    private static LavalinkTrack ApplyMetadata(LavalinkTrack track, string? title, string? artist, string? album, bool isDjPick)
     {
         var hasTitle = !string.IsNullOrWhiteSpace(title);
         var hasArtist = !string.IsNullOrWhiteSpace(artist);
         var hasAlbum = !string.IsNullOrWhiteSpace(album);
-        if (!hasTitle && !hasArtist && !hasAlbum) return track;
+        if (!hasTitle && !hasArtist && !hasAlbum && !isDjPick) return track;
 
         var additionalInfo = track.AdditionalInformation;
         if (hasAlbum)
             additionalInfo = additionalInfo.SetItem(AlbumMetadataKey, JsonSerializer.SerializeToElement(album));
+        if (isDjPick)
+            additionalInfo = additionalInfo.SetItem(DjPickMetadataKey, JsonSerializer.SerializeToElement(true));
 
         return new LavalinkTrack
         {
@@ -438,6 +462,9 @@ public class LavalinkVoiceService : IVoiceService
         track.AdditionalInformation.TryGetValue(AlbumMetadataKey, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    private static bool IsDjPick(LavalinkTrack track) =>
+        track.AdditionalInformation.TryGetValue(DjPickMetadataKey, out var value) && value.ValueKind == JsonValueKind.True;
 
     public async Task StopAsync(ulong guildId)
     {

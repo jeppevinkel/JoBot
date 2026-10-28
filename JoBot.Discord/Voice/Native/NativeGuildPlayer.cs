@@ -118,15 +118,26 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
         Wake();
     }
 
-    /// <summary>Starts the track if nothing is playing, otherwise adds it to the end of the queue.</summary>
+    /// <summary>
+    /// Starts the track if nothing is playing, otherwise queues it: DJ picks go at the end, and other tracks
+    /// in front of the first DJ pick.
+    /// </summary>
     public void Enqueue(NativeTrack track)
     {
         lock (_sync)
         {
             if (_current is null)
+            {
                 SetCurrentLocked(track);
+            }
             else
-                _queue.Add(track);
+            {
+                var firstDjPick = track.IsDjPick ? -1 : _queue.FindIndex(queued => queued.IsDjPick);
+                if (firstDjPick >= 0)
+                    _queue.Insert(firstDjPick, track);
+                else
+                    _queue.Add(track);
+            }
         }
 
         Wake();
@@ -270,7 +281,8 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
                     Title = track.Title,
                     Artist = track.Artist,
                     Album = track.Album,
-                    Duration = track.Duration ?? TimeSpan.Zero
+                    Duration = track.Duration ?? TimeSpan.Zero,
+                    IsDjPick = track.IsDjPick
                 }).ToList()
             };
         }
@@ -612,7 +624,8 @@ public sealed class NativeGuildPlayer : IAsyncDisposable
         Title = track.Title,
         Artist = track.Artist,
         Album = track.Album,
-        Duration = track.Duration ?? TimeSpan.Zero
+        Duration = track.Duration ?? TimeSpan.Zero,
+        IsDjPick = track.IsDjPick
     };
 
     public async ValueTask DisposeAsync()
