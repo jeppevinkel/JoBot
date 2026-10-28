@@ -190,6 +190,10 @@ public class VoiceListeningService : BackgroundService, IUtteranceSink
                         // Errors from the AI service; not worth speaking out loud
                         await SendTextAsync(channel, reply.Content);
                         break;
+                    case MergedAction:
+                        // The answer someone else was getting covered this too, and was spoken by their handler
+                        _lastAnswered[(guild.Id, userId)] = _timeProvider.GetUtcNow();
+                        break;
                 }
             }
         }

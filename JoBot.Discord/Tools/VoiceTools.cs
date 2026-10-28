@@ -104,6 +104,9 @@ public class VoiceTools : IToolProvider
     {
         // Tracks queued while topping up for DJ mode go behind the ones people ask for
         DjTurn? djTurn = DjTurn.Current;
+        if (djTurn is { IsSessionEnded: true })
+            return ToolResult.Failure("DJ mode was turned off, so don't add any more tracks.");
+
         var success = await _voiceService.EnqueueAsync(guildId, streamUrl, title, artist, album, isDjPick: djTurn is not null);
         if (success)
             djTurn?.RecordTrackAdded();

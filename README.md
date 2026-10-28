@@ -85,7 +85,7 @@ Ask the bot to keep the music going (e.g. "keep the music going, I'm into 90s hi
 
 DJ mode is off by default and only turns on when someone asks. Ask the bot to change the style at any time, or to announce what it adds: with announcements on, it introduces new tracks out loud and posts the same in the channel where DJ mode was turned on. It turns off when asked, when the music is stopped, or when the bot leaves voice. It doesn't ask for tracks while no one else is in the voice channel. If the AI adds nothing three times in a row, DJ mode pauses and says so.
 
-The AI sees the conversation when picking tracks, but the requests for more tracks aren't added to it, so they don't push out what people said.
+The AI sees the conversation when picking tracks, but the requests for more tracks aren't added to it, so they don't push out what people said. People talking to the bot don't have to wait for a top-up to finish, and announcements are spoken after any reply that's already playing rather than over it.
 
 ```yaml
       # Optional (defaults shown)

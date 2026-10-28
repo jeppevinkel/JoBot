@@ -1,4 +1,4 @@
-using DSharpPlus;
+﻿using DSharpPlus;
 using DSharpPlus.Entities;
 using JoBot.Core.Actions;
 using JoBot.Core.Interfaces;
@@ -18,7 +18,7 @@ namespace JoBot.Discord.Dj;
 /// <remarks>
 /// <para>
 /// The AI is asked through <see cref="IAiService.ProcessEventAsync"/>, so it sees the conversation for context
-/// without the requests crowding it out. Tracks it queues meanwhile are marked as DJ picks (see <see cref="DjTurn"/>),
+/// without the requests crowding it out, and people talking to the bot meanwhile don't have to wait for it. Tracks it queues meanwhile are marked as DJ picks (see <see cref="DjTurn"/>),
 /// and tracks people ask for go in front of them.
 /// </para>
 /// <para>
@@ -127,7 +127,10 @@ public sealed class DjModeService : BackgroundService
     private async Task NudgeAsync(ulong guildId, DjSession session, CancellationToken stoppingToken)
     {
         // Tracks queued from here on, through the AI service and its tools, are DJ picks
-        using DjTurn turn = DjTurn.Begin();
+        using DjTurn turn = DjTurn.Begin(session.Ended);
+
+        // Stop working on it straight away if DJ mode is turned off meanwhile
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, session.Ended);
 
         DjNudgeContext? context = null;
         string? reply = null;
@@ -141,7 +144,7 @@ public sealed class DjModeService : BackgroundService
                                    (AutomatedEventPayload? payload, context) = await BuildNudgeAsync(guildId, session);
                                    return payload;
                                },
-                               stoppingToken))
+                               cancellation.Token))
             {
                 switch (action)
                 {
@@ -154,6 +157,10 @@ public sealed class DjModeService : BackgroundService
                         break;
                 }
             }
+        }
+        catch (OperationCanceledException) when (session.Ended.IsCancellationRequested)
+        {
+            _logger.LogInformation("Stopped topping up the queue in guild {GuildId} because DJ mode was turned off", guildId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {
@@ -178,7 +185,7 @@ public sealed class DjModeService : BackgroundService
             case DjTopUpOutcome.ToppedUp:
                 _logger.LogInformation("DJ mode added {Count} track(s) in guild {GuildId}", turn.TracksAdded, guildId);
                 if (context.Announce && reply is not null)
-                    await AnnounceAsync(guildId, context.ChannelId, reply, stoppingToken);
+                    await AnnounceAsync(guildId, session, context.ChannelId, reply, stoppingToken);
                 break;
             case DjTopUpOutcome.Failed:
                 _logger.LogWarning("DJ mode added no tracks in guild {GuildId} ({Failures} of {MaxRetries} attempts)",
@@ -188,7 +195,7 @@ public sealed class DjModeService : BackgroundService
                 _logger.LogWarning("Paused DJ mode in guild {GuildId} after {MaxRetries} top-ups added no tracks",
                     guildId, _options.MaxRetries);
                 // Always said out loud: otherwise the music just stops, and listeners may not be watching the chat
-                await AnnounceAsync(guildId, context.ChannelId, PausedNotice, stoppingToken);
+                await AnnounceAsync(guildId, session, context.ChannelId, PausedNotice, stoppingToken);
                 break;
         }
     }
@@ -258,7 +265,16 @@ public sealed class DjModeService : BackgroundService
     private static string Describe(TrackInfo track) => $"{track.Artist} - {track.Title}";
 
     /// <summary>Posts <paramref name="text"/> in the channel and speaks it in the voice channel.</summary>
-    private async Task AnnounceAsync(ulong guildId, ulong channelId, string text, CancellationToken stoppingToken)
+    /// <remarks>
+    /// Speech is queued behind any other speech, such as a reply to someone, rather than talking over it. Generating
+    /// it takes a moment, so it's dropped if DJ mode was turned off meanwhile.
+    /// </remarks>
+    private async Task AnnounceAsync(
+        ulong guildId,
+        DjSession session,
+        ulong channelId,
+        string text,
+        CancellationToken stoppingToken)
     {
         if (_discordClient.Guilds.TryGetValue(guildId, out DiscordGuild? guild) &&
             guild.Channels.TryGetValue(channelId, out DiscordChannel? channel))
@@ -283,7 +299,8 @@ public sealed class DjModeService : BackgroundService
         try
         {
             var url = await _ttsService.GenerateAsync(text, stoppingToken);
-            await _voiceService.PlayTtsAsync(guildId, url);
+            if (_sessions.IsCurrent(guildId, session))
+                await _voiceService.PlayTtsAsync(guildId, url);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {

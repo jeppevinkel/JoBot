@@ -20,6 +20,11 @@ namespace JoBot.Ai.Services;
 public class AiService : IAiService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    private const string NewMessagesNote =
+        "[NEW MESSAGES] While you were working on this, the following arrived in the same channel. Handle them " +
+        "along with what you were already doing. Your replies from here on are read by everyone in the channel, " +
+        "so make clear who you're answering where it isn't obvious.";
     private readonly ILogger<AiService> _logger;
     private readonly AnthropicClient _anthropicClient;
     private readonly AiOptions _options;
@@ -55,8 +60,30 @@ public class AiService : IAiService
         _logger.LogInformation("Received payload:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
 
         GuildConversationHistory history = GetGuildHistory(guildId);
+        var channelKey = GetMergeableChannelKey(payload);
+
+        // Someone is already being answered in this channel: join that answer instead of waiting for it
+        if (channelKey is not null &&
+            history.ActiveTurn is { } activeTurn &&
+            activeTurn.ChannelKey == channelKey &&
+            activeTurn.TryPost(JsonSerializer.Serialize(payload, JsonOptions)) is { } posted)
+        {
+            if (await posted.WaitAsync(cancellationToken))
+            {
+                _logger.LogInformation("Added message {MessageId} to the reply already in progress in guild {GuildId}",
+                    payload.Message.Id, guildId);
+
+                // Keep the caller around until the reply is out, e.g. so the bot doesn't leave voice before speaking it
+                await activeTurn.Completed.WaitAsync(cancellationToken);
+                yield return new MergedAction();
+                yield break;
+            }
+
+            // The turn finished before reaching its next tool call; answer this on its own
+        }
 
         await history.Lock.WaitAsync(cancellationToken);
+        TurnInbox? inbox = channelKey is null ? null : new TurnInbox(channelKey);
         try
         {
             await history.EnsureInitializedAsync();
@@ -67,12 +94,16 @@ public class AiService : IAiService
             await history.AddAsync(new Message(RoleType.User,
                 JsonSerializer.Serialize(payload, JsonOptions)));
 
+            history.ActiveTurn = inbox;
+
             await foreach (AiAction action in RunTurnAsync(
-                               guildId, () => history.Messages, history.AddAsync, cancellationToken))
+                               guildId, () => history.Messages, history.AddAsync, inbox, cancellationToken))
                 yield return action;
         }
         finally
         {
+            history.ActiveTurn = null;
+            inbox?.Close();
             history.Lock.Release();
         }
     }
@@ -83,46 +114,65 @@ public class AiService : IAiService
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         GuildConversationHistory history = GetGuildHistory(guildId);
+        AutomatedEventPayload? payload;
+        List<Message> messages;
 
+        // Wait for anyone being answered, so the event sees what they asked for and what was done about it.
+        // The event itself runs on a copy, without holding up messages that arrive meanwhile.
         await history.Lock.WaitAsync(cancellationToken);
         try
         {
-            AutomatedEventPayload? payload = await buildPayload(cancellationToken);
+            payload = await buildPayload(cancellationToken);
             if (payload is null)
                 yield break;
 
-            _logger.LogInformation("Received automated event:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
-
             await history.EnsureInitializedAsync();
-
-            // Work on a copy so the event never reaches the stored conversation
-            List<Message> messages = history.Messages.ToList();
-            messages.Add(new Message(RoleType.User, JsonSerializer.Serialize(payload, JsonOptions)));
-
-            await foreach (AiAction action in RunTurnAsync(
-                               guildId,
-                               () => messages,
-                               message =>
-                               {
-                                   messages.Add(message);
-                                   return Task.CompletedTask;
-                               },
-                               cancellationToken))
-                yield return action;
+            messages = history.Messages.ToList();
         }
         finally
         {
             history.Lock.Release();
         }
+
+        _logger.LogInformation("Received automated event:\n{Payload}", JsonSerializer.Serialize(payload, JsonOptions));
+
+        messages.Add(new Message(RoleType.User, JsonSerializer.Serialize(payload, JsonOptions)));
+
+        await foreach (AiAction action in RunTurnAsync(
+                           guildId,
+                           () => messages,
+                           message =>
+                           {
+                               messages.Add(message);
+                               return Task.CompletedTask;
+                           },
+                           inbox: null,
+                           cancellationToken))
+            yield return action;
     }
+
+    /// <summary>
+    /// Messages that can be added to a reply already in progress in the same channel, keyed by that channel;
+    /// null for those that can't.
+    /// </summary>
+    /// <remarks>
+    /// Replies go back the way the message came, so only messages from the same channel and medium can share one.
+    /// Spoken follow-ups that didn't name the bot may not be meant for it, which a shared reply can't express.
+    /// </remarks>
+    private static string? GetMergeableChannelKey(MessagePayload payload) =>
+        payload.SpokenInput is { AddressedByName: false }
+            ? null
+            : $"{payload.Source.Type}:{payload.Source.Channel.Id}";
 
     /// <summary>Gets Claude's answer to the last message, running tools until it's done.</summary>
     /// <param name="getMessages">The conversation so far, ending with the message to answer.</param>
     /// <param name="addMessage">Appends Claude's responses and tool results to the conversation.</param>
+    /// <param name="inbox">Messages to add to the turn as they arrive, if it takes any.</param>
     private async IAsyncEnumerable<AiAction> RunTurnAsync(
         ulong guildId,
         Func<IReadOnlyList<Message>> getMessages,
         Func<Message, Task> addMessage,
+        TurnInbox? inbox,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         GuildSettings settings = await _settingsService.GetSettingsAsync(guildId);
@@ -169,6 +219,8 @@ public class AiService : IAiService
             if (!string.IsNullOrWhiteSpace(textContent))
                 yield return new RespondAction { Content = textContent };
 
+            // All results go in one message, followed by anything people said in the meantime
+            var results = new List<ContentBase>();
             foreach (Function? toolCall in response.ToolCalls)
             {
                 try
@@ -177,14 +229,23 @@ public class AiService : IAiService
                         toolCall.Name,
                         toolCall.Arguments);
                     _logger.LogInformation("ToolCall: {ToolName}, result: {Result}", toolCall.Name, toolResult);
-                    await addMessage(new Message(toolCall, toolResult));
+                    results.AddRange(new Message(toolCall, toolResult).Content);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error invoking tool call {ToolName}", toolCall.Name);
-                    await addMessage(new Message(toolCall, ex.ToString()));
+                    results.AddRange(new Message(toolCall, ex.ToString()).Content);
                 }
             }
+
+            var newMessages = inbox?.Drain() ?? [];
+            if (newMessages.Count > 0)
+            {
+                results.Add(new TextContent { Text = NewMessagesNote });
+                results.AddRange(newMessages.Select(message => new TextContent { Text = message }));
+            }
+
+            await addMessage(new Message { Role = RoleType.User, Content = results });
 
             parameters.Messages = getMessages().ToList();
             result = await GetClaudeResponseAsync(parameters, guildId, cancellationToken);

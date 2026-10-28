@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
 
 namespace JoBot.Discord.Dj;
@@ -28,11 +28,24 @@ public sealed class DjSessionStore
             .Update(channelId, guidance, announce);
 
     /// <returns>Whether DJ mode was on.</returns>
-    public bool Disable(ulong guildId) => _sessions.TryRemove(guildId, out _);
+    public bool Disable(ulong guildId)
+    {
+        if (!_sessions.TryRemove(guildId, out DjSession? session))
+            return false;
+
+        session.End();
+        return true;
+    }
 
     /// <summary>Turns DJ mode off, but only if <paramref name="session"/> is still the guild's current session.</summary>
-    public bool Disable(ulong guildId, DjSession session) =>
-        _sessions.TryRemove(KeyValuePair.Create(guildId, session));
+    public bool Disable(ulong guildId, DjSession session)
+    {
+        if (!_sessions.TryRemove(KeyValuePair.Create(guildId, session)))
+            return false;
+
+        session.End();
+        return true;
+    }
 
     public DjSession? Get(ulong guildId) => _sessions.GetValueOrDefault(guildId);
 

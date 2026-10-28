@@ -1,4 +1,4 @@
-using JoBot.Core.Models;
+﻿using JoBot.Core.Models;
 
 namespace JoBot.Discord.Dj;
 
@@ -36,6 +36,9 @@ public sealed class DjSession
     private readonly LinkedList<TrackInfo> _skipped = new();
     private readonly Queue<DateTimeOffset> _recentNudges = new();
 
+    // Not disposed: top-ups may still be checking it after DJ mode was turned off
+    private readonly CancellationTokenSource _ended = new();
+
     private ulong _channelId;
     private string? _guidance;
     private bool _announce;
@@ -49,6 +52,11 @@ public sealed class DjSession
     {
         _historySize = Math.Max(0, historySize);
     }
+
+    /// <summary>Cancelled when DJ mode is turned off, which stops a top-up in progress.</summary>
+    public CancellationToken Ended => _ended.Token;
+
+    public void End() => _ended.Cancel();
 
     public DjStatus Status
     {
