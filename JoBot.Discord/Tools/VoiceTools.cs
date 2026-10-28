@@ -8,6 +8,11 @@ namespace JoBot.Discord.Tools;
 
 public class VoiceTools : IToolProvider
 {
+    // The AI sees volume as a percentage where 100% is half the player's full volume: full volume is loud, and
+    // even 10% of it is comfortable, so a low-looking number would otherwise read as nearly silent
+    private const float VolumePercentScale = 200f;
+    private const int MaxVolumePercent = 200;
+
     private readonly IVoiceService _voiceService;
     private readonly DjSessionStore _djSessions;
 
@@ -168,24 +173,27 @@ public class VoiceTools : IToolProvider
             invalidArgumentMessage: "Position must be between 0 and the duration of the current track.");
     }
 
-    [AiTool("Get the current music volume as a percentage")]
+    [AiTool("Get the current music volume as a percentage, where 100 is a normal listening level and 200 the maximum")]
     public async Task<string> GetVolumeAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
         var volume = await _voiceService.GetVolumeAsync(guildId);
         return volume is null
             ? ToolResult.Failure("Not connected to voice.")
-            : ToolResult.Success(new { volume = (int)Math.Round(volume.Value * 100) });
+            : ToolResult.Success(new { volume = (int)Math.Round(volume.Value * VolumePercentScale) });
     }
 
     [AiTool("Set the music volume for the current session. This does not change the server's default volume")]
     public async Task<string> SetVolumeAsync(
         [AiParameter("Guild ID")] ulong guildId,
-        [AiParameter("Volume as a percentage from 0 to 100")] int volume)
+        [AiParameter("Volume as a percentage from 0 to 200, where 100 is a normal listening level")] int volume)
     {
-        var result = await _voiceService.SetVolumeAsync(guildId, volume / 100f);
+        if (volume is < 0 or > MaxVolumePercent)
+            return ToolResult.Failure($"Volume must be between 0 and {MaxVolumePercent}.");
+
+        var result = await _voiceService.SetVolumeAsync(guildId, volume / VolumePercentScale);
         return ToResultMessage(result, $"Volume set to {volume}%.",
-            invalidArgumentMessage: "Volume must be between 0 and 100.");
+            invalidArgumentMessage: $"Volume must be between 0 and {MaxVolumePercent}.");
     }
 
     [AiTool("Remove a track from the queue without affecting the current track. Use get_queue first to find the track's position")]
