@@ -44,6 +44,7 @@ public static class DiscordServiceExtensions
 
         services.AddHostedService<DiscordBotService>();
         services.AddHostedService<VoiceInactivityService>();
+        services.AddSingleton<VoiceCompany>();
         services.AddDiscordClient(token!, DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents);
 
         SlashCommandProcessor slashCommandProcessor = new(new SlashCommandConfiguration()
