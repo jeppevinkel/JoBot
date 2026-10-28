@@ -2,16 +2,19 @@
 using JoBot.Core.Helpers;
 using JoBot.Core.Interfaces;
 using JoBot.Core.Models;
+using JoBot.Discord.Dj;
 
 namespace JoBot.Discord.Tools;
 
 public class VoiceTools : IToolProvider
 {
     private readonly IVoiceService _voiceService;
+    private readonly DjSessionStore _djSessions;
 
-    public VoiceTools(IVoiceService voiceService)
+    public VoiceTools(IVoiceService voiceService, DjSessionStore djSessions)
     {
         _voiceService = voiceService;
+        _djSessions = djSessions;
     }
 
     [AiTool("Join a voice channel")]
@@ -23,10 +26,12 @@ public class VoiceTools : IToolProvider
         return success ? ToolResult.Success("Joined voice channel.") : ToolResult.Failure("Failed to join voice channel.");
     }
 
-    [AiTool("Leave the current voice channel. Music stops right away; anything you say before or after this is still spoken before leaving")]
+    [AiTool("Leave the current voice channel. Music stops right away and DJ mode turns off; anything you say before or after this is still spoken before leaving")]
     public async Task<string> LeaveVoiceChannelAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
+        // Otherwise DJ mode could refill the queue before the bot is gone
+        _djSessions.Disable(guildId);
         await _voiceService.LeaveVoiceChannelAsync(guildId);
         return ToolResult.Success("Leaving the voice channel once any speech has finished.");
     }
@@ -53,12 +58,13 @@ public class VoiceTools : IToolProvider
             : ToolResult.Failure("Failed to start playback. Ensure the bot is connected to a voice channel first.");
     }
 
-    [AiTool("Stop audio playback in the current voice channel")]
+    [AiTool("Stop audio playback in the current voice channel. This also turns DJ mode off")]
     public async Task<string> StopAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
+        var wasDjMode = _djSessions.Disable(guildId);
         await _voiceService.StopAsync(guildId);
-        return ToolResult.Success("Playback stopped.");
+        return ToolResult.Success(wasDjMode ? "Playback stopped and DJ mode turned off." : "Playback stopped.");
     }
 
     [AiTool("Check if the bot is connected to a voice channel")]
@@ -96,7 +102,12 @@ public class VoiceTools : IToolProvider
         [AiParameter("Track artist to display in the queue", Required = false)] string? artist = null,
         [AiParameter("Track album to display in the queue", Required = false)] string? album = null)
     {
-        var success = await _voiceService.EnqueueAsync(guildId, streamUrl, title, artist, album);
+        // Tracks queued while topping up for DJ mode go behind the ones people ask for
+        DjTurn? djTurn = DjTurn.Current;
+        var success = await _voiceService.EnqueueAsync(guildId, streamUrl, title, artist, album, isDjPick: djTurn is not null);
+        if (success)
+            djTurn?.RecordTrackAdded();
+
         return success
             ? ToolResult.Success("Track added to queue.")
             : ToolResult.Failure("Failed to add track to queue.");
@@ -106,6 +117,11 @@ public class VoiceTools : IToolProvider
     public async Task<string> SkipAsync(
         [AiParameter("Guild ID")] ulong guildId)
     {
+        // DJ mode steers away from what people skip
+        if (_djSessions.Get(guildId) is { } djSession &&
+            await _voiceService.GetNowPlayingAsync(guildId) is { Track: { } skipped })
+            djSession.RecordSkip(skipped);
+
         await _voiceService.SkipAsync(guildId);
         return ToolResult.Success("Skipped current track.");
     }
