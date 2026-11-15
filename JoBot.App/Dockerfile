@@ -1,5 +1,5 @@
-﻿# Ubuntu 26.04: the Opus library bundled with DSharpPlus.Voice needs glibc 2.43, newer than 24.04 provides
-FROM mcr.microsoft.com/dotnet/runtime:10.0-resolute AS base
+# Ubuntu 26.04: the Opus library bundled with DSharpPlus.Voice needs glibc 2.43, newer than 24.04 provides
+FROM mcr.microsoft.com/dotnet/runtime:11.0-resolute AS base
 USER $APP_UID
 WORKDIR /app
 
